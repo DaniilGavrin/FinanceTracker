@@ -1,6 +1,9 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { v4 as uuidv4 } from 'uuid';
 
+// Типы банков
+export type BankType = 'sber' | 'tbank' | 'other' | 'person';
+
 // 1. Типы данных
 export interface Account {
   id: string;
@@ -9,6 +12,8 @@ export interface Account {
   balance: number;
   limit?: number;
   debtId?: string; // Связь с долгом (для кредиток)
+  bank?: BankType; // Банк (для кредиток)
+  openedAt?: number; // Дата открытия
   updatedAt: number;
   synced: boolean;
 }
@@ -16,11 +21,14 @@ export interface Account {
 export interface Debt {
   id: string;
   name: string;
-  type: 'bank_loan' | 'person' | 'installment';
+  type: 'bank_loan' | 'person' | 'installment' | 'credit_card';
   totalAmount: number;
   currentAmount: number;
   interestRate?: number;
   linkedAccountId?: string; // Связь со счётом (для кредиток)
+  bank?: BankType; // Банк
+  startDate?: number; // Дата взятия кредита/открытия кредитки
+  termMonths?: number; // Срок в месяцах
   updatedAt: number;
   synced: boolean;
 }
@@ -36,9 +44,9 @@ export interface Transaction {
   id: string;
   type: TransactionType;
   amount: number;
-  fromAccountId?: string;  // Откуда (expense, transfer, debt_payment)
-  toAccountId?: string;    // Куда (income, transfer, debt_borrow)
-  debtId?: string;         // Какой долг (debt_payment, debt_borrow)
+  fromAccountId?: string;
+  toAccountId?: string;
+  debtId?: string;
   category?: string;
   description?: string;
   date: number;
@@ -55,14 +63,22 @@ export class FinanceDB extends Dexie {
   constructor() {
     super('FinanceTrackerDB');
     
-    this.version(2).stores({
-      accounts: 'id, type, synced, updatedAt, debtId',
-      debts: 'id, type, synced, updatedAt, linkedAccountId',
+    // Версия 3 с новыми полями
+    this.version(3).stores({
+      accounts: 'id, type, synced, updatedAt, debtId, bank',
+      debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
       transactions: 'id, fromAccountId, toAccountId, debtId, date, type, synced, createdAt'
     }).upgrade(tx => {
-      // Миграция с v1 на v2 — добавляем новые поля
+      // Миграция с v2 на v3
       return tx.table('accounts').toCollection().modify(acc => {
-        acc.debtId = acc.debtId || undefined;
+        acc.bank = acc.bank || undefined;
+        acc.openedAt = acc.openedAt || undefined;
+      }).then(() => {
+        return tx.table('debts').toCollection().modify(debt => {
+          debt.bank = debt.bank || undefined;
+          debt.startDate = debt.startDate || undefined;
+          debt.termMonths = debt.termMonths || undefined;
+        });
       });
     });
   }
@@ -70,7 +86,7 @@ export class FinanceDB extends Dexie {
 
 export const db = new FinanceDB();
 
-// 3. Простые функции создания (для счетов и долгов)
+// 3. Создание счёта (обычного)
 export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>) {
   return db.accounts.add({
     ...data,
@@ -80,6 +96,7 @@ export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>
   });
 }
 
+// 4. Создание долга (обычного)
 export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
   return db.debts.add({
     ...data,
@@ -89,7 +106,51 @@ export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
   });
 }
 
-// 4. ГЛАВНАЯ ФУНКЦИЯ — создание транзакции с эффектами
+// 5. СОЗДАНИЕ КРЕДИТНОЙ КАРТЫ (счёт + долг автоматически)
+export async function createCreditCard(params: {
+  name: string;
+  limit: number;
+  bank: BankType;
+  openedAt: number;
+}): Promise<{ accountId: string; debtId: string }> {
+  const accountId = uuidv4();
+  const debtId = uuidv4();
+  const now = Date.now();
+
+  await db.transaction('rw', db.accounts, db.debts, async () => {
+    // Создаём долг (изначально 0)
+    await db.debts.add({
+      id: debtId,
+      name: params.name,
+      type: 'credit_card',
+      totalAmount: 0,
+      currentAmount: 0,
+      linkedAccountId: accountId,
+      bank: params.bank,
+      startDate: params.openedAt,
+      updatedAt: now,
+      synced: false,
+    });
+
+    // Создаём счёт с лимитом
+    await db.accounts.add({
+      id: accountId,
+      name: params.name,
+      type: 'credit',
+      balance: params.limit, // Доступный лимит
+      limit: params.limit,
+      debtId: debtId,
+      bank: params.bank,
+      openedAt: params.openedAt,
+      updatedAt: now,
+      synced: false,
+    });
+  });
+
+  return { accountId, debtId };
+}
+
+// 6. Создание транзакции с эффектами (без изменений)
 export async function createTransactionWithEffects(
   txData: Omit<Transaction, 'id' | 'createdAt' | 'synced'>
 ): Promise<string> {
@@ -103,12 +164,9 @@ export async function createTransactionWithEffects(
     synced: false,
   };
 
-  // Атомарная транзакция Dexie — всё или ничего
   await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    // 1. Сохраняем саму транзакцию
     await db.transactions.add(transaction);
 
-    // 2. Применяем эффекты в зависимости от типа
     switch (txData.type) {
       case 'expense': {
         if (txData.fromAccountId) {
@@ -118,11 +176,11 @@ export async function createTransactionWithEffects(
             acc.updatedAt = now;
             await db.accounts.put(acc);
             
-            // Если это кредитка — увеличиваем связанный долг
             if (acc.type === 'credit' && acc.debtId) {
               const debt = await db.debts.get(acc.debtId);
               if (debt) {
                 debt.currentAmount += txData.amount;
+                debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
                 debt.updatedAt = now;
                 await db.debts.put(debt);
               }
@@ -170,7 +228,6 @@ export async function createTransactionWithEffects(
             debt.updatedAt = now;
             await db.debts.put(debt);
             
-            // Если долг связан со счётом (кредитка) — обновляем и счёт
             if (debt.linkedAccountId) {
               const acc = await db.accounts.get(debt.linkedAccountId);
               if (acc) {
@@ -181,7 +238,6 @@ export async function createTransactionWithEffects(
             }
           }
         }
-        // Опционально списываем со счёта
         if (txData.fromAccountId) {
           const acc = await db.accounts.get(txData.fromAccountId);
           if (acc) {
@@ -202,7 +258,6 @@ export async function createTransactionWithEffects(
             debt.updatedAt = now;
             await db.debts.put(debt);
             
-            // Если долг связан со счётом — обновляем и счёт
             if (debt.linkedAccountId) {
               const acc = await db.accounts.get(debt.linkedAccountId);
               if (acc) {
@@ -213,7 +268,6 @@ export async function createTransactionWithEffects(
             }
           }
         }
-        // Опционально зачисляем на счёт
         if (txData.toAccountId) {
           const acc = await db.accounts.get(txData.toAccountId);
           if (acc) {
@@ -230,7 +284,7 @@ export async function createTransactionWithEffects(
   return txId;
 }
 
-// 5. Вспомогательная функция для связи кредитки с долгом
+// 7. Связь кредитки с долгом (если нужно вручную)
 export async function linkCreditCardToDebt(accountId: string, debtId: string) {
   await db.transaction('rw', db.accounts, db.debts, async () => {
     const acc = await db.accounts.get(accountId);

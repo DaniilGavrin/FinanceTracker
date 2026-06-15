@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 15.06.2026 15:30:40
+Дата: 15.06.2026 16:39:54
 Структура: src/
 
 =============================================
@@ -65,6 +65,30 @@ body {
   }
 }
 
+/* Кастомный скроллбар для модалок */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--muted);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+
+/* Для Firefox */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+}
+
 
 ─────────────────────────────────────────
 FILE: app\layout.tsx
@@ -117,18 +141,26 @@ FILE: app\page.tsx
 ─────────────────────────────────────────
 "use client";
 
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, Account, Debt } from "@/db";
+import { db } from "@/db";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { AddAccountForm } from "@/components/AddAccountForm";
+import { AddDebtForm } from "@/components/AddDebtForm";
+import { AddTransactionForm } from "@/components/AddTransactionForm";
+import { FAQModal } from "@/components/FAQModal";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showAddDebt, setShowAddDebt] = useState(false);
+  const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(false);
 
-  // Подписываемся на изменения в базе данных в реальном времени
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
+  const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().limit(5).toArray(), []);
 
-  // Считаем общие суммы
   const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
   const totalBalance = accounts?.reduce((sum, a) => sum + a.balance, 0) || 0;
 
@@ -137,19 +169,34 @@ export default function Home() {
       {/* Шапка */}
       <header className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Finance Tracker</h1>
-        <div
-          className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
-            isOnline
-              ? "bg-green-500/10 text-green-400 border-green-500/20"
-              : "bg-red-500/10 text-red-400 border-red-500/20"
-          }`}
-        >
-          <span
-            className={`w-2 h-2 rounded-full animate-pulse ${
-              isOnline ? "bg-green-400" : "bg-red-400"
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
+              isOnline
+                ? "bg-green-500/10 text-green-400 border-green-500/20"
+                : "bg-red-500/10 text-red-400 border-red-500/20"
             }`}
-          ></span>
-          {isOnline ? "В сети" : "Оффлайн"}
+          >
+            <span
+              className={`w-2 h-2 rounded-full animate-pulse ${
+                isOnline ? "bg-green-400" : "bg-red-400"
+              }`}
+            ></span>
+            {isOnline ? "В сети" : "Оффлайн"}
+          </div>
+          <button
+            onClick={() => setShowFAQ(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors"
+            title="Помощь"
+          >
+            <span className="text-sm font-bold">?</span>
+          </button>
+          <button
+            onClick={() => setShowAddTransaction(true)}
+            className="btn-primary px-3 py-1 text-sm"
+          >
+            + Операция
+          </button>
         </div>
       </header>
 
@@ -171,7 +218,15 @@ export default function Home() {
 
       {/* Список счетов */}
       <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-3">Счета ({accounts?.length || 0})</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Счета ({accounts?.length || 0})</h2>
+          <button
+            onClick={() => setShowAddAccount(true)}
+            className="text-sm text-primary hover:underline"
+          >
+            + Добавить
+          </button>
+        </div>
         <div className="space-y-3">
           {accounts && accounts.length > 0 ? (
             accounts.map((acc) => (
@@ -179,7 +234,7 @@ export default function Home() {
                 <div>
                   <p className="font-medium">{acc.name}</p>
                   <p className="text-xs text-muted-foreground capitalize">
-                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type}
+                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type === 'cash' ? 'Наличные' : acc.type}
                   </p>
                 </div>
                 <p className="font-mono text-lg">₽ {acc.balance.toLocaleString('ru-RU')}</p>
@@ -193,7 +248,15 @@ export default function Home() {
 
       {/* Список долгов */}
       <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-3">Обязательства ({debts?.length || 0})</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Обязательства ({debts?.length || 0})</h2>
+          <button
+            onClick={() => setShowAddDebt(true)}
+            className="text-sm text-primary hover:underline"
+          >
+            + Добавить
+          </button>
+        </div>
         <div className="space-y-3">
           {debts && debts.length > 0 ? (
             debts.map((debt) => (
@@ -214,6 +277,745 @@ export default function Home() {
           )}
         </div>
       </section>
+
+      {/* Последние транзакции */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold mb-3">Последние операции</h2>
+        <div className="space-y-3">
+          {transactions && transactions.length > 0 ? (
+            transactions.map((tx) => {
+              // Находим связанные счета и долги
+              const fromAcc = accounts?.find(a => a.id === tx.fromAccountId);
+              const toAcc = accounts?.find(a => a.id === tx.toAccountId);
+              const debt = debts?.find(d => d.id === tx.debtId);
+
+              let title = tx.description || 'Без описания';
+              let subtitle = '';
+              let amountPrefix = '';
+              let amountColor = '';
+
+              switch (tx.type) {
+                case 'expense':
+                  amountPrefix = '-';
+                  amountColor = 'text-destructive';
+                  subtitle = fromAcc ? `с ${fromAcc.name}` : 'Расход';
+                  break;
+                case 'income':
+                  amountPrefix = '+';
+                  amountColor = 'text-accent';
+                  subtitle = toAcc ? `на ${toAcc.name}` : 'Доход';
+                  break;
+                case 'transfer':
+                  amountPrefix = '↔';
+                  amountColor = 'text-primary';
+                  subtitle = fromAcc && toAcc ? `${fromAcc.name} → ${toAcc.name}` : 'Перевод';
+                  break;
+                case 'debt_payment':
+                  amountPrefix = '-';
+                  amountColor = 'text-accent';
+                  subtitle = debt ? `гашение: ${debt.name}` : 'Платёж по долгу';
+                  break;
+                case 'debt_borrow':
+                  amountPrefix = '+';
+                  amountColor = 'text-destructive';
+                  subtitle = debt ? `заём: ${debt.name}` : 'Новый долг';
+                  break;
+              }
+
+              return (
+                <div key={tx.id} className="card flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{title}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {subtitle} • {new Date(tx.date).toLocaleDateString('ru-RU')}
+                    </p>
+                  </div>
+                  <p className={`font-mono text-lg ml-4 ${amountColor}`}>
+                    {amountPrefix} {tx.amount.toLocaleString('ru-RU')} ₽
+                  </p>
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4">Операций пока нет</p>
+          )}
+        </div>
+      </section>
+
+      {/* Модальные окна */}
+      {showAddAccount && <AddAccountForm onClose={() => setShowAddAccount(false)} />}
+      {showAddDebt && <AddDebtForm onClose={() => setShowAddDebt(false)} />}
+      {showAddTransaction && <AddTransactionForm onClose={() => setShowAddTransaction(false)} />}
+      {showFAQ && <FAQModal onClose={() => setShowFAQ(false)} />}
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\AddAccountForm.tsx
+─────────────────────────────────────────
+"use client";
+
+import { useState } from "react";
+import { createAccount } from "@/db";
+
+export function AddAccountForm({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"debit" | "cash">("debit");
+  const [balance, setBalance] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    await createAccount({
+      name,
+      type,
+      balance: parseFloat(balance) || 0,
+    });
+
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="card max-w-md w-full">
+        <h2 className="text-xl font-bold mb-4">Добавить счёт</h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Название</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Например: Кошелёк"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Тип</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as "debit" | "cash")}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="debit">Дебетовая карта</option>
+              <option value="cash">Наличные</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Баланс</label>
+            <input
+              type="number"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              placeholder="0"
+              step="0.01"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary flex-1"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              className="btn-primary flex-1"
+            >
+              Добавить
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\AddDebtForm.tsx
+─────────────────────────────────────────
+"use client";
+
+import { useState } from "react";
+import { createDebt } from "@/db";
+
+export function AddDebtForm({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"bank_loan" | "person" | "installment">("bank_loan");
+  const [totalAmount, setTotalAmount] = useState("");
+  const [currentAmount, setCurrentAmount] = useState("");
+  const [interestRate, setInterestRate] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const total = parseFloat(totalAmount) || 0;
+    const current = parseFloat(currentAmount) || total;
+
+    await createDebt({
+      name,
+      type,
+      totalAmount: total,
+      currentAmount: current,
+      interestRate: interestRate ? parseFloat(interestRate) : undefined,
+    });
+
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4">Добавить долг</h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Название</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Например: Кредит Сбер"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Тип</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as any)}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="bank_loan">Кредит</option>
+              <option value="person">Долг физлицу</option>
+              <option value="installment">Рассрочка</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Общая сумма
+              <span className="ml-1 text-xs text-muted-foreground">(сколько взяли изначально)</span>
+            </label>
+            <input
+              type="number"
+              value={totalAmount}
+              onChange={(e) => setTotalAmount(e.target.value)}
+              placeholder="100000"
+              step="0.01"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Текущий остаток
+              <span className="ml-1 text-xs text-muted-foreground">(сколько должны сейчас)</span>
+            </label>
+            <input
+              type="number"
+              value={currentAmount}
+              onChange={(e) => setCurrentAmount(e.target.value)}
+              placeholder="Оставьте пустым, если равно общей сумме"
+              step="0.01"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Если вы только взяли долг — оставьте пустым, система сама подставит общую сумму.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Годовая ставка (%)
+              <span className="ml-1 text-xs text-muted-foreground">(необязательно)</span>
+            </label>
+            <input
+              type="number"
+              value={interestRate}
+              onChange={(e) => setInterestRate(e.target.value)}
+              placeholder="Например: 19.9"
+              step="0.1"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Для рассрочек обычно 0%. Для кредитов — смотрите в договоре.
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary flex-1"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              className="btn-primary flex-1"
+            >
+              Добавить
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\AddTransactionForm.tsx
+─────────────────────────────────────────
+"use client";
+
+import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db, TransactionType } from "@/db";
+import { createTransactionWithEffects } from "@/db";
+
+export function AddTransactionForm({ onClose }: { onClose: () => void }) {
+  const [type, setType] = useState<TransactionType>("expense");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [fromAccountId, setFromAccountId] = useState("");
+  const [toAccountId, setToAccountId] = useState("");
+  const [debtId, setDebtId] = useState("");
+
+  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
+  const debts = useLiveQuery(() => db.debts.toArray(), []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const parsedAmount = parseFloat(amount);
+    if (!parsedAmount || parsedAmount <= 0) return;
+
+    await createTransactionWithEffects({
+      type,
+      amount: parsedAmount,
+      description: description || undefined,
+      category: category || undefined,
+      fromAccountId: fromAccountId || undefined,
+      toAccountId: toAccountId || undefined,
+      debtId: debtId || undefined,
+      date: Date.now(),
+    });
+
+    onClose();
+  };
+
+  // Фильтруем счета по типу
+  const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
+  const allAccounts = accounts || [];
+  const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <h2 className="text-xl font-bold mb-4">Новая операция</h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Тип операции */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Тип операции</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: "expense", label: "Расход", icon: "📉" },
+                { value: "income", label: "Доход", icon: "📈" },
+                { value: "transfer", label: "Перевод", icon: "🔄" },
+                { value: "debt_payment", label: "Гашение долга", icon: "💳" },
+                { value: "debt_borrow", label: "Взять в долг", icon: "" },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setType(opt.value as TransactionType)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${
+                    type === opt.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-secondary border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="mr-1">{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Сумма */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0"
+              step="0.01"
+              min="0.01"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-lg font-mono"
+              required
+            />
+          </div>
+
+          {/* Поля в зависимости от типа */}
+          
+          {/* РАСХОД: откуда */}
+          {type === "expense" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Откуда списать</label>
+              <select
+                value={fromAccountId}
+                onChange={(e) => setFromAccountId(e.target.value)}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                required
+              >
+                <option value="">Выберите счёт</option>
+                {allAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} ({acc.balance.toLocaleString('ru-RU')} ₽)
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Можно выбрать кредитку — долг увеличится автоматически
+              </p>
+            </div>
+          )}
+
+          {/* ДОХОД: куда */}
+          {type === "income" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Куда зачислить</label>
+              <select
+                value={toAccountId}
+                onChange={(e) => setToAccountId(e.target.value)}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                required
+              >
+                <option value="">Выберите счёт</option>
+                {allAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} ({acc.balance.toLocaleString('ru-RU')} ₽)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* ПЕРЕВОД: откуда и куда */}
+          {type === "transfer" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Откуда</label>
+                <select
+                  value={fromAccountId}
+                  onChange={(e) => setFromAccountId(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                >
+                  <option value="">Выберите счёт</option>
+                  {allAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.balance.toLocaleString('ru-RU')} ₽)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Куда</label>
+                <select
+                  value={toAccountId}
+                  onChange={(e) => setToAccountId(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                >
+                  <option value="">Выберите счёт</option>
+                  {allAccounts.filter(acc => acc.id !== fromAccountId).map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.balance.toLocaleString('ru-RU')} ₽)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* ГАШЕНИЕ ДОЛГА: какой долг + откуда (опционально) */}
+          {type === "debt_payment" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Какой долг гасим</label>
+                <select
+                  value={debtId}
+                  onChange={(e) => setDebtId(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                >
+                  <option value="">Выберите долг</option>
+                  {debts?.map(debt => (
+                    <option key={debt.id} value={debt.id}>
+                      {debt.name} (остаток: {debt.currentAmount.toLocaleString('ru-RU')} ₽)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Списать со счёта <span className="text-xs text-muted-foreground">(необязательно)</span>
+                </label>
+                <select
+                  value={fromAccountId}
+                  onChange={(e) => setFromAccountId(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Только уменьшить долг</option>
+                  {allAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.balance.toLocaleString('ru-RU')} ₽)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Если не выбран — долг уменьшится, но баланс счёта не изменится
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ВЗЯТЬ В ДОЛГ: какой долг + куда (опционально) */}
+          {type === "debt_borrow" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">По какому долгу</label>
+                <select
+                  value={debtId}
+                  onChange={(e) => setDebtId(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                >
+                  <option value="">Выберите долг</option>
+                  {debts?.map(debt => (
+                    <option key={debt.id} value={debt.id}>
+                      {debt.name} (остаток: {debt.currentAmount.toLocaleString('ru-RU')} ₽)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Или создайте новый долг в разделе «Обязательства»
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Зачислить на счёт <span className="text-xs text-muted-foreground">(необязательно)</span>
+                </label>
+                <select
+                  value={toAccountId}
+                  onChange={(e) => setToAccountId(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Только увеличить долг</option>
+                  {allAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.balance.toLocaleString('ru-RU')} ₽)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Например, взял у друга 5000₽ и сразу положил на карту
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* Описание */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Комментарий</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Например: Продукты, Зарплата"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          {/* Кнопки */}
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary flex-1"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              className="btn-primary flex-1"
+            >
+              Добавить
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\FAQModal.tsx
+─────────────────────────────────────────
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+
+interface FAQItem {
+  question: string;
+  answer: string;
+}
+
+const faqData: FAQItem[] = [
+  {
+    question: "Как добавить счёт?",
+    answer: "Нажмите «+ Добавить» рядом с разделом «Счета». Выберите тип (Дебетовая карта или Наличные), введите название и текущий баланс. Например: «Т-Банк Черная» с балансом 15 000 ₽."
+  },
+  {
+    question: "В чём разница между типами счетов?",
+    answer: "Дебетовая карта — обычная карта, где лежат ваши деньги. Наличные — деньги в кошельке/кармане. Кредитная карта и Рассрочка добавляются через раздел «Обязательства», так как это ваши долги."
+  },
+  {
+    question: "Как добавить долг (кредит, рассрочку, долг человеку)?",
+    answer: "Нажмите «+ Добавить» в разделе «Обязательства». Укажите название, тип и суммы. Для кредита: «Общая сумма» — сколько вы взяли изначально, «Текущий остаток» — сколько осталось выплатить сейчас."
+  },
+  {
+    question: "Что такое «Общая сумма» и «Текущий остаток»?",
+    answer: "Общая сумма — это изначальная сумма долга (например, вы взяли кредит на 100 000 ₽). Текущий остаток — сколько вы должны прямо сейчас (например, уже выплатили 30 000, значит остаток 70 000 ₽). Если вы только взяли долг — оба значения одинаковые."
+  },
+  {
+    question: "Как добавить расход или доход?",
+    answer: "Нажмите «+ Операция» в шапке. Выберите тип (Расход/Доход), введите сумму, выберите счёт (откуда ушли деньги или куда пришли) и добавьте комментарий. Например: «Продукты» — 2 500 ₽ с карты «Т-Банк»."
+  },
+  {
+    question: "Что такое «Платёж по долгу»?",
+    answer: "Это операция, когда вы гасите часть долга. Выберите тип «Платёж по долгу», укажите сумму и какой именно долг вы гасите. Баланс долга автоматически уменьшится. Например: выплатили 10 000 ₽ по кредиту Сбера."
+  },
+  {
+    question: "Работает ли приложение без интернета?",
+    answer: "Да! Все данные хранятся локально на вашем устройстве. Вы можете добавлять операции, счета и долги даже в самолёте. Когда появится интернет — данные синхронизируются с сервером (если вы вошли в аккаунт)."
+  },
+  {
+    question: "Безопасны ли мои данные?",
+    answer: "Да. Данные хранятся в зашифрованном виде в вашем браузере. Мы не передаём информацию третьим лицам. Синхронизация с сервером происходит только если вы сами этого хотите."
+  },
+  {
+    question: "Как удалить счёт или долг?",
+    answer: "Сейчас функция удаления в разработке. Если нужно исправить ошибку — напишите нам, мы поможем. В следующей версии добавим возможность редактирования и удаления."
+  },
+  {
+    question: "Почему суммы считаются приблизительно?",
+    answer: "Банки используют сложные формулы с округлениями, которые не публикуют. Наш трекер даёт оценку с точностью до рублей. Для точных данных смотрите выписку в приложении банка."
+  }
+];
+
+export function FAQModal({ onClose }: { onClose: () => void }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Закрытие по Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
+
+  // Закрытие по клику на оверлей (но не на саму модалку)
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+      onClose();
+    }
+  };
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={handleOverlayClick}
+    >
+      <div 
+        ref={modalRef}
+        className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar"
+      >
+        <div className="flex items-center justify-between mb-6 sticky top-0 bg-card z-10 pb-2">
+          <h2 className="text-xl font-bold">Частые вопросы</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-secondary transition-colors"
+            title="Закрыть"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {faqData.map((item, index) => (
+            <div key={index} className="border border-border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setOpenIndex(openIndex === index ? null : index)}
+                className="w-full px-4 py-3 text-left flex items-center justify-between hover:bg-secondary/50 transition-colors"
+              >
+                <span className="font-medium text-sm">{item.question}</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`transition-transform ${openIndex === index ? 'rotate-180' : ''}`}
+                >
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              {openIndex === index && (
+                <div className="px-4 pb-3 text-sm text-muted-foreground">
+                  {item.answer}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-border">
+          <p className="text-xs text-muted-foreground text-center">
+            Остались вопросы? Напишите нам: <a href="mailto:support@bytewizard.ru" className="text-primary hover:underline">support@bytewizard.ru</a>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -225,13 +1027,14 @@ FILE: db\index.ts
 import Dexie, { type EntityTable } from 'dexie';
 import { v4 as uuidv4 } from 'uuid';
 
-// 1. Типы данных (Интерфейсы)
+// 1. Типы данных
 export interface Account {
   id: string;
   name: string;
   type: 'debit' | 'credit' | 'cash' | 'installment';
   balance: number;
   limit?: number;
+  debtId?: string; // Связь с долгом (для кредиток)
   updatedAt: number;
   synced: boolean;
 }
@@ -243,24 +1046,33 @@ export interface Debt {
   totalAmount: number;
   currentAmount: number;
   interestRate?: number;
+  linkedAccountId?: string; // Связь со счётом (для кредиток)
   updatedAt: number;
   synced: boolean;
 }
 
+export type TransactionType = 
+  | 'income' 
+  | 'expense' 
+  | 'transfer' 
+  | 'debt_payment' 
+  | 'debt_borrow';
+
 export interface Transaction {
   id: string;
-  accountId?: string;
-  debtId?: string;
+  type: TransactionType;
   amount: number;
+  fromAccountId?: string;  // Откуда (expense, transfer, debt_payment)
+  toAccountId?: string;    // Куда (income, transfer, debt_borrow)
+  debtId?: string;         // Какой долг (debt_payment, debt_borrow)
   category?: string;
   description?: string;
-  date: number; // Timestamp
-  type: 'income' | 'expense' | 'transfer' | 'debt_payment';
+  date: number;
   createdAt: number;
   synced: boolean;
 }
 
-// 2. Инициализация базы данных
+// 2. Инициализация базы
 export class FinanceDB extends Dexie {
   accounts!: EntityTable<Account, 'id'>;
   debts!: EntityTable<Debt, 'id'>;
@@ -269,19 +1081,22 @@ export class FinanceDB extends Dexie {
   constructor() {
     super('FinanceTrackerDB');
     
-    // Определяем таблицы и индексы
-    this.version(1).stores({
-      accounts: 'id, type, synced, updatedAt',
-      debts: 'id, type, synced, updatedAt',
-      transactions: 'id, accountId, debtId, date, type, synced, createdAt'
+    this.version(2).stores({
+      accounts: 'id, type, synced, updatedAt, debtId',
+      debts: 'id, type, synced, updatedAt, linkedAccountId',
+      transactions: 'id, fromAccountId, toAccountId, debtId, date, type, synced, createdAt'
+    }).upgrade(tx => {
+      // Миграция с v1 на v2 — добавляем новые поля
+      return tx.table('accounts').toCollection().modify(acc => {
+        acc.debtId = acc.debtId || undefined;
+      });
     });
   }
 }
 
-// Экспортируем инстанс базы
 export const db = new FinanceDB();
 
-// 3. Вспомогательные функции для быстрого создания записей
+// 3. Простые функции создания (для счетов и долгов)
 export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>) {
   return db.accounts.add({
     ...data,
@@ -300,12 +1115,159 @@ export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
   });
 }
 
-export function createTransaction(data: Omit<Transaction, 'id' | 'createdAt' | 'synced'>) {
-  return db.transactions.add({
-    ...data,
-    id: uuidv4(),
-    createdAt: Date.now(),
+// 4. ГЛАВНАЯ ФУНКЦИЯ — создание транзакции с эффектами
+export async function createTransactionWithEffects(
+  txData: Omit<Transaction, 'id' | 'createdAt' | 'synced'>
+): Promise<string> {
+  const txId = uuidv4();
+  const now = Date.now();
+
+  const transaction: Transaction = {
+    ...txData,
+    id: txId,
+    createdAt: now,
     synced: false,
+  };
+
+  // Атомарная транзакция Dexie — всё или ничего
+  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
+    // 1. Сохраняем саму транзакцию
+    await db.transactions.add(transaction);
+
+    // 2. Применяем эффекты в зависимости от типа
+    switch (txData.type) {
+      case 'expense': {
+        if (txData.fromAccountId) {
+          const acc = await db.accounts.get(txData.fromAccountId);
+          if (acc) {
+            acc.balance -= txData.amount;
+            acc.updatedAt = now;
+            await db.accounts.put(acc);
+            
+            // Если это кредитка — увеличиваем связанный долг
+            if (acc.type === 'credit' && acc.debtId) {
+              const debt = await db.debts.get(acc.debtId);
+              if (debt) {
+                debt.currentAmount += txData.amount;
+                debt.updatedAt = now;
+                await db.debts.put(debt);
+              }
+            }
+          }
+        }
+        break;
+      }
+
+      case 'income': {
+        if (txData.toAccountId) {
+          const acc = await db.accounts.get(txData.toAccountId);
+          if (acc) {
+            acc.balance += txData.amount;
+            acc.updatedAt = now;
+            await db.accounts.put(acc);
+          }
+        }
+        break;
+      }
+
+      case 'transfer': {
+        if (txData.fromAccountId && txData.toAccountId) {
+          const fromAcc = await db.accounts.get(txData.fromAccountId);
+          const toAcc = await db.accounts.get(txData.toAccountId);
+          
+          if (fromAcc && toAcc) {
+            fromAcc.balance -= txData.amount;
+            fromAcc.updatedAt = now;
+            await db.accounts.put(fromAcc);
+            
+            toAcc.balance += txData.amount;
+            toAcc.updatedAt = now;
+            await db.accounts.put(toAcc);
+          }
+        }
+        break;
+      }
+
+      case 'debt_payment': {
+        if (txData.debtId) {
+          const debt = await db.debts.get(txData.debtId);
+          if (debt) {
+            debt.currentAmount = Math.max(0, debt.currentAmount - txData.amount);
+            debt.updatedAt = now;
+            await db.debts.put(debt);
+            
+            // Если долг связан со счётом (кредитка) — обновляем и счёт
+            if (debt.linkedAccountId) {
+              const acc = await db.accounts.get(debt.linkedAccountId);
+              if (acc) {
+                acc.balance = Math.min(acc.limit || 0, acc.balance + txData.amount);
+                acc.updatedAt = now;
+                await db.accounts.put(acc);
+              }
+            }
+          }
+        }
+        // Опционально списываем со счёта
+        if (txData.fromAccountId) {
+          const acc = await db.accounts.get(txData.fromAccountId);
+          if (acc) {
+            acc.balance -= txData.amount;
+            acc.updatedAt = now;
+            await db.accounts.put(acc);
+          }
+        }
+        break;
+      }
+
+      case 'debt_borrow': {
+        if (txData.debtId) {
+          const debt = await db.debts.get(txData.debtId);
+          if (debt) {
+            debt.currentAmount += txData.amount;
+            debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
+            debt.updatedAt = now;
+            await db.debts.put(debt);
+            
+            // Если долг связан со счётом — обновляем и счёт
+            if (debt.linkedAccountId) {
+              const acc = await db.accounts.get(debt.linkedAccountId);
+              if (acc) {
+                acc.balance = Math.max(-(acc.limit || 0), acc.balance - txData.amount);
+                acc.updatedAt = now;
+                await db.accounts.put(acc);
+              }
+            }
+          }
+        }
+        // Опционально зачисляем на счёт
+        if (txData.toAccountId) {
+          const acc = await db.accounts.get(txData.toAccountId);
+          if (acc) {
+            acc.balance += txData.amount;
+            acc.updatedAt = now;
+            await db.accounts.put(acc);
+          }
+        }
+        break;
+      }
+    }
+  });
+
+  return txId;
+}
+
+// 5. Вспомогательная функция для связи кредитки с долгом
+export async function linkCreditCardToDebt(accountId: string, debtId: string) {
+  await db.transaction('rw', db.accounts, db.debts, async () => {
+    const acc = await db.accounts.get(accountId);
+    const debt = await db.debts.get(debtId);
+    
+    if (acc && debt) {
+      acc.debtId = debtId;
+      debt.linkedAccountId = accountId;
+      await db.accounts.put(acc);
+      await db.debts.put(debt);
+    }
   });
 }
 
@@ -341,6 +1303,6 @@ export function useOnlineStatus() {
 
 
 =============================================
-Обработано файлов: 5
+Обработано файлов: 9
 Пропущено файлов: 1
-Размер экспорта: 11507 байт
+Размер экспорта: 53392 байт

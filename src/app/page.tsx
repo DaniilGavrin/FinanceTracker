@@ -88,17 +88,24 @@ export default function Home() {
         </div>
         <div className="space-y-3">
           {accounts && accounts.length > 0 ? (
-            accounts.map((acc) => (
-              <div key={acc.id} className="card flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{acc.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type === 'cash' ? 'Наличные' : acc.type}
-                  </p>
+            accounts.map((acc) => {
+              const bankLabel = acc.bank === 'sber' ? 'Сбер' : acc.bank === 'tbank' ? 'Т-Банк' : acc.bank === 'other' ? 'Другой' : '';
+              const dateLabel = acc.openedAt ? new Date(acc.openedAt).toLocaleDateString('ru-RU') : '';
+              
+              return (
+                <div key={acc.id} className="card flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{acc.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type === 'cash' ? 'Наличные' : acc.type}
+                      {bankLabel && ` • ${bankLabel}`}
+                      {dateLabel && ` • ${dateLabel}`}
+                    </p>
+                  </div>
+                  <p className="font-mono text-lg ml-4">₽ {acc.balance.toLocaleString('ru-RU')}</p>
                 </div>
-                <p className="font-mono text-lg">₽ {acc.balance.toLocaleString('ru-RU')}</p>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p className="text-muted-foreground text-sm text-center py-4">Нет счетов. Добавь первый!</p>
           )}
@@ -118,19 +125,26 @@ export default function Home() {
         </div>
         <div className="space-y-3">
           {debts && debts.length > 0 ? (
-            debts.map((debt) => (
-              <div key={debt.id} className="card flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{debt.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : 'Рассрочка'}
+            debts.map((debt) => {
+              const bankLabel = debt.bank === 'sber' ? 'Сбер' : debt.bank === 'tbank' ? 'Т-Банк' : debt.bank === 'person' ? 'Физлицо' : debt.bank === 'other' ? 'Другой' : '';
+              const dateLabel = debt.startDate ? new Date(debt.startDate).toLocaleDateString('ru-RU') : '';
+              
+              return (
+                <div key={debt.id} className="card flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{debt.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : debt.type === 'installment' ? 'Рассрочка' : 'Кредитка'}
+                      {bankLabel && ` • ${bankLabel}`}
+                      {dateLabel && ` • ${dateLabel}`}
+                    </p>
+                  </div>
+                  <p className="font-mono text-lg text-destructive ml-4">
+                    - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
                   </p>
                 </div>
-                <p className="font-mono text-lg text-destructive">
-                  - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
-                </p>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p className="text-muted-foreground text-sm text-center py-4">Долгов нет. Так держать!</p>
           )}
