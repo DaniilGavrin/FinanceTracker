@@ -47,7 +47,7 @@ export interface Transaction {
   fromAccountId?: string;
   toAccountId?: string;
   debtId?: string;
-  category?: string;
+  categoryId?: string; 
   description?: string;
   date: number;
   createdAt: number;
@@ -64,20 +64,14 @@ export class FinanceDB extends Dexie {
   constructor() {
     super('FinanceTrackerDB');
     
-    this.version(3).stores({
+    this.version(4).stores({
       accounts: 'id, type, synced, updatedAt, debtId, bank',
       debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
-      transactions: 'id, fromAccountId, toAccountId, debtId, date, type, synced, createdAt'
+      transactions: 'id, fromAccountId, toAccountId, debtId, categoryId, date, type, synced, createdAt' // ← ДОБАВИТЬ categoryId
     }).upgrade(tx => {
-      return tx.table('accounts').toCollection().modify(acc => {
-        acc.bank = acc.bank || undefined;
-        acc.openedAt = acc.openedAt || undefined;
-      }).then(() => {
-        return tx.table('debts').toCollection().modify(debt => {
-          debt.bank = debt.bank || undefined;
-          debt.startDate = debt.startDate || undefined;
-          debt.termMonths = debt.termMonths || undefined;
-        });
+      // Миграция для старых транзакций: добавляем categoryId как undefined
+      return tx.table('transactions').toCollection().modify(tx => {
+        tx.categoryId = tx.categoryId || undefined;
       });
     });
   }

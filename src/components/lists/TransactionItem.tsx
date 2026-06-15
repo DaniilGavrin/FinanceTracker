@@ -1,4 +1,5 @@
 import { Transaction, Account, Debt } from "@/db";
+import { getCategoryById } from "@/lib/categories";
 
 interface Props {
   tx: Transaction;
@@ -11,8 +12,9 @@ export function TransactionItem({ tx, accounts, debts, onDelete }: Props) {
   const fromAcc = accounts?.find(a => a.id === tx.fromAccountId);
   const toAcc = accounts?.find(a => a.id === tx.toAccountId);
   const debt = debts?.find(d => d.id === tx.debtId);
+  const category = tx.categoryId ? getCategoryById(tx.categoryId) : null;
 
-  let title = tx.description || 'Без описания';
+  let title = tx.description || category?.name || 'Без описания';
   let subtitle = '';
   let amountPrefix = '';
   let amountColor = '';
@@ -42,6 +44,10 @@ export function TransactionItem({ tx, accounts, debts, onDelete }: Props) {
 
   return (
     <div className="card flex justify-between items-center group">
+      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-xl shrink-0">
+          {category ? category.icon : '📄'}
+      </div>
+
       <div className="flex-1 min-w-0">
         <p className="font-medium truncate">{title}</p>
         <p className="text-xs text-muted-foreground truncate">

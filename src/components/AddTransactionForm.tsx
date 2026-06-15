@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, TransactionType } from "@/db";
 import { createTransactionWithEffects } from "@/db";
+import { DEFAULT_CATEGORIES, Category } from "@/lib/categories";
 
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<TransactionType>("expense");
@@ -13,6 +14,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [toAccountId, setToAccountId] = useState("");
   const [debtId, setDebtId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categoryId, setCategoryId] = useState("");
 
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
@@ -45,6 +47,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
         description: description || undefined,
         fromAccountId: fromAccountId || undefined,
         toAccountId: toAccountId || undefined,
+        categoryId: categoryId || undefined,
         debtId: debtId || undefined,
         date: Date.now(),
       });
@@ -103,6 +106,30 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               required
             />
           </div>
+
+          {/* Выбор категории */}
+          {(type === "expense" || type === "income") && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Категория</label>
+              <div className="grid grid-cols-4 gap-2">
+                {DEFAULT_CATEGORIES.filter(c => c.type === type).map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCategoryId(cat.id)}
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${
+                      categoryId === cat.id
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "bg-secondary border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-xl mb-1">{cat.icon}</span>
+                    <span className="text-[10px] text-center leading-tight">{cat.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {type === "expense" && (
             <div>
