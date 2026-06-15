@@ -1,8 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin", "cyrillic"] });
 
 export const metadata: Metadata = {
   title: "Finance Tracker",
@@ -31,7 +28,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className={`${inter.className} antialiased`}>
+      {/* Используем системные шрифты, которые уже есть в globals.css. Никаких внешних запросов! */}
+      <body className="antialiased">
         {children}
       </body>
     </html>
