@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface FAQItem {
   question: string;
@@ -52,17 +52,41 @@ const faqData: FAQItem[] = [
 
 export function FAQModal({ onClose }: { onClose: () => void }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Закрытие по Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
+
+  // Закрытие по клику на оверлей (но не на саму модалку)
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+      onClose();
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={handleOverlayClick}
+    >
+      <div 
+        ref={modalRef}
+        className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar"
+      >
+        <div className="flex items-center justify-between mb-6 sticky top-0 bg-card z-10 pb-2">
           <h2 className="text-xl font-bold">Частые вопросы</h2>
           <button
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-secondary transition-colors"
+            title="Закрыть"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
