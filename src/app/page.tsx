@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, deleteAccount, deleteDebt, deleteTransaction } from "@/db";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { usePersistentStorage } from "@/hooks/usePersistentStorage";
 
 import { AddAccountForm } from "@/components/AddAccountForm";
 import { AddDebtForm } from "@/components/AddDebtForm";
@@ -21,6 +22,7 @@ type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const persistentStorage = usePersistentStorage();
   const [activeTab, setActiveTab] = useState<Tab>("home");
   
   // Модалки
