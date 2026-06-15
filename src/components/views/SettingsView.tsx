@@ -4,16 +4,23 @@ import { db } from "@/db";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export function SettingsView() {
-  const [storageInfo, setStorageInfo] = useState<{ usage: string; quota: string } | null>(null);
+  const [storageInfo, setStorageInfo] = useState<{ usage: string; quota: string; percent: number } | null>(null);
   const [showClearCacheDialog, setShowClearCacheDialog] = useState(false);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
 
   useEffect(() => {
     if ('storage' in navigator && 'estimate' in navigator.storage) {
       navigator.storage.estimate().then(estimate => {
-        const usage = estimate.usage ? (estimate.usage / 1024 / 1024).toFixed(2) + ' МБ' : '0 МБ';
-        const quota = estimate.quota ? (estimate.quota / 1024 / 1024).toFixed(2) + ' МБ' : 'Неизвестно';
-        setStorageInfo({ usage, quota });
+        if (estimate.usage !== undefined && estimate.quota !== undefined) {
+          const usageMB = (estimate.usage / 1024 / 1024).toFixed(2);
+          const quotaMB = (estimate.quota / 1024 / 1024).toFixed(2);
+          const percent = ((estimate.usage / estimate.quota) * 100).toFixed(3);
+          setStorageInfo({ 
+            usage: `${usageMB} МБ`, 
+            quota: `${quotaMB} МБ`,
+            percent: parseFloat(percent)
+          });
+        }
       });
     }
   }, []);
@@ -44,11 +51,31 @@ export function SettingsView() {
   return (
     <div className="space-y-4 pb-20">
       <div className="card">
-        <h3 className="font-semibold mb-3">Хранилище</h3>
+        <h3 className="font-semibold mb-3">Локальное хранилище</h3>
         {storageInfo ? (
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Использовано: <span className="text-foreground font-mono">{storageInfo.usage}</span></p>
-            <p>Доступно: <span className="text-foreground font-mono">{storageInfo.quota}</span></p>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>Использовано: <span className="text-foreground font-mono">{storageInfo.usage}</span></p>
+              <p>Квота браузера: <span className="text-foreground font-mono">{storageInfo.quota}</span></p>
+            </div>
+            
+            {/* Прогресс-бар */}
+            <div className="space-y-1">
+              <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${storageInfo.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                {storageInfo.percent}% от квоты
+              </p>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              💡 Квота — это лимит, который браузер выделил для нашего приложения. 
+              Она не связана с памятью вашего устройства. При достижении лимита браузер может автоматически очистить старые данные.
+            </p>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Загрузка информации...</p>

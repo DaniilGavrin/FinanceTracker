@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 15.06.2026 18:01:38
+Дата: 15.06.2026 18:14:15
 Структура: src/
 
 =============================================
@@ -131,9 +131,7 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className={`${inter.className} antialiased`}>
-        <main className="min-h-screen flex flex-col">
-          {children}
-        </main>
+        {children}
       </body>
     </html>
   );
@@ -610,38 +608,53 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
   const [fromAccountId, setFromAccountId] = useState("");
   const [toAccountId, setToAccountId] = useState("");
   const [debtId, setDebtId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
+
+  const allAccounts = accounts || [];
+
+  // Валидация для перевода
+  const isTransferValid = type !== "transfer" || (fromAccountId && toAccountId && fromAccountId !== toAccountId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const parsedAmount = parseFloat(amount);
-    if (!parsedAmount || parsedAmount <= 0) return;
+    if (!parsedAmount || parsedAmount <= 0) {
+      alert("Сумма должна быть больше нуля");
+      return;
+    }
 
-    await createTransactionWithEffects({
-      type,
-      amount: parsedAmount,
-      description: description || undefined,
-      category: category || undefined,
-      fromAccountId: fromAccountId || undefined,
-      toAccountId: toAccountId || undefined,
-      debtId: debtId || undefined,
-      date: Date.now(),
-    });
+    if (type === "transfer" && fromAccountId === toAccountId) {
+      alert("Нельзя перевести деньги на тот же счёт");
+      return;
+    }
 
-    onClose();
+    setIsSubmitting(true);
+
+    try {
+      await createTransactionWithEffects({
+        type,
+        amount: parsedAmount,
+        description: description || undefined,
+        fromAccountId: fromAccountId || undefined,
+        toAccountId: toAccountId || undefined,
+        debtId: debtId || undefined,
+        date: Date.now(),
+      });
+      onClose();
+    } catch (error) {
+      console.error("Ошибка создания транзакции:", error);
+      alert("Не удалось сохранить операцию. Попробуйте ещё раз.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  // Фильтруем счета по типу
-  const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
-  const allAccounts = accounts || [];
-  const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -649,7 +662,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
         <h2 className="text-xl font-bold mb-4">Новая операция</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Тип операции */}
           <div>
             <label className="block text-sm font-medium mb-2">Тип операции</label>
             <div className="grid grid-cols-2 gap-2">
@@ -677,7 +689,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Сумма */}
           <div>
             <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
             <input
@@ -692,9 +703,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {/* Поля в зависимости от типа */}
-          
-          {/* РАСХОД: откуда */}
           {type === "expense" && (
             <div>
               <label className="block text-sm font-medium mb-1">Откуда списать</label>
@@ -717,7 +725,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* ДОХОД: куда */}
           {type === "income" && (
             <div>
               <label className="block text-sm font-medium mb-1">Куда зачислить</label>
@@ -737,7 +744,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* ПЕРЕВОД: откуда и куда */}
           {type === "transfer" && (
             <>
               <div>
@@ -771,11 +777,13 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
+                {fromAccountId && toAccountId && fromAccountId === toAccountId && (
+                  <p className="text-xs text-destructive mt-1">Нельзя выбрать один и тот же счёт</p>
+                )}
               </div>
             </>
           )}
 
-          {/* ГАШЕНИЕ ДОЛГА: какой долг + откуда (опционально) */}
           {type === "debt_payment" && (
             <>
               <div>
@@ -810,14 +818,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Если не выбран — долг уменьшится, но баланс счёта не изменится
-                </p>
               </div>
             </>
           )}
 
-          {/* ВЗЯТЬ В ДОЛГ: какой долг + куда (опционально) */}
           {type === "debt_borrow" && (
             <>
               <div>
@@ -835,9 +839,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Или создайте новый долг в разделе «Обязательства»
-                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -855,14 +856,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Например, взял у друга 5000₽ и сразу положил на карту
-                </p>
               </div>
             </>
           )}
 
-          {/* Описание */}
           <div>
             <label className="block text-sm font-medium mb-1">Комментарий</label>
             <input
@@ -874,20 +871,21 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {/* Кнопки */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
+              disabled={isSubmitting}
               className="btn-secondary flex-1"
             >
               Отмена
             </button>
             <button
               type="submit"
-              className="btn-primary flex-1"
+              disabled={isSubmitting || !isTransferValid}
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Добавить
+              {isSubmitting ? "Сохранение..." : "Добавить"}
             </button>
           </div>
         </form>
@@ -953,43 +951,43 @@ interface FAQItem {
 const faqData: FAQItem[] = [
   {
     question: "Как добавить счёт?",
-    answer: "Нажмите «+ Добавить» рядом с разделом «Счета». Выберите тип (Дебетовая карта или Наличные), введите название и текущий баланс. Например: «Т-Банк Черная» с балансом 15 000 ₽."
+    answer: "Перейдите на вкладку «Счета» и нажмите «+ Добавить». Выберите тип (Дебетовая карта, Наличные или Кредитная карта), укажите банк, дату открытия и баланс. Для кредитки укажите лимит — долг создастся автоматически."
   },
   {
-    question: "В чём разница между типами счетов?",
-    answer: "Дебетовая карта — обычная карта, где лежат ваши деньги. Наличные — деньги в кошельке/кармане. Кредитная карта и Рассрочка добавляются через раздел «Обязательства», так как это ваши долги."
+    question: "Как добавить долг или кредит?",
+    answer: "Перейдите на вкладку «Счета» и нажмите «+ Добавить» в разделе «Обязательства». Укажите тип (Кредит, Долг физлицу или Рассрочка), банк, дату, сумму и ставку."
   },
   {
-    question: "Как добавить долг (кредит, рассрочку, долг человеку)?",
-    answer: "Нажмите «+ Добавить» в разделе «Обязательства». Укажите название, тип и суммы. Для кредита: «Общая сумма» — сколько вы взяли изначально, «Текущий остаток» — сколько осталось выплатить сейчас."
+    question: "Как добавить расход, доход или перевод?",
+    answer: "Нажмите «+ Операция» в шапке. Выберите тип операции, введите сумму, выберите счёт и добавьте комментарий. Для перевода укажите оба счёта."
   },
   {
-    question: "Что такое «Общая сумма» и «Текущий остаток»?",
-    answer: "Общая сумма — это изначальная сумма долга (например, вы взяли кредит на 100 000 ₽). Текущий остаток — сколько вы должны прямо сейчас (например, уже выплатили 30 000, значит остаток 70 000 ₽). Если вы только взяли долг — оба значения одинаковые."
+    question: "Как погасить долг или рассрочку?",
+    answer: "Нажмите «+ Операция», выберите «Гашение долга», укажите сумму и какой долг гасите. Опционально можно указать счёт, с которого списываются деньги."
   },
   {
-    question: "Как добавить расход или доход?",
-    answer: "Нажмите «+ Операция» в шапке. Выберите тип (Расход/Доход), введите сумму, выберите счёт (откуда ушли деньги или куда пришли) и добавьте комментарий. Например: «Продукты» — 2 500 ₽ с карты «Т-Банк»."
-  },
-  {
-    question: "Что такое «Платёж по долгу»?",
-    answer: "Это операция, когда вы гасите часть долга. Выберите тип «Платёж по долгу», укажите сумму и какой именно долг вы гасите. Баланс долга автоматически уменьшится. Например: выплатили 10 000 ₽ по кредиту Сбера."
+    question: "Как редактировать или удалить запись?",
+    answer: "Наведите курсор на счёт, долг или операцию (на десктопе) или просто посмотрите на правую часть карточки (на мобильном). Нажмите на иконку корзины и подтвердите удаление. Редактирование будет добавлено в следующей версии."
   },
   {
     question: "Работает ли приложение без интернета?",
-    answer: "Да! Все данные хранятся локально на вашем устройстве. Вы можете добавлять операции, счета и долги даже в самолёте. Когда появится интернет — данные синхронизируются с сервером (если вы вошли в аккаунт)."
+    answer: "Да! Все данные хранятся локально в вашем браузере. Вы можете добавлять операции, счета и долги даже в самолёте. Когда появится интернет — данные синхронизируются с сервером."
   },
   {
     question: "Безопасны ли мои данные?",
-    answer: "Да. Данные хранятся в зашифрованном виде в вашем браузере. Мы не передаём информацию третьим лицам. Синхронизация с сервером происходит только если вы сами этого хотите."
+    answer: "Да. Данные хранятся локально в зашифрованном виде. Мы не передаём информацию третьим лицам. Синхронизация с сервером происходит только если вы сами этого хотите."
   },
   {
-    question: "Как удалить счёт или долг?",
-    answer: "Сейчас функция удаления в разработке. Если нужно исправить ошибку — напишите нам, мы поможем. В следующей версии добавим возможность редактирования и удаления."
+    question: "Как очистить данные или кэш?",
+    answer: "Перейдите на вкладку «Настройки». Там вы увидите информацию о хранилище, кнопку очистки кэша PWA и кнопку полной очистки всех данных."
   },
   {
     question: "Почему суммы считаются приблизительно?",
     answer: "Банки используют сложные формулы с округлениями, которые не публикуют. Наш трекер даёт оценку с точностью до рублей. Для точных данных смотрите выписку в приложении банка."
+  },
+  {
+    question: "Как связаться с поддержкой?",
+    answer: "Напишите нам на почту support@bytewizard.ru или через форму обратной связи на сайте bytewizard.ru."
   }
 ];
 
@@ -1116,7 +1114,7 @@ FILE: components\layout\BottomNav.tsx
 ─────────────────────────────────────────
 "use client";
 
-import { JSX } from "react/jsx-runtime";
+import type { JSX } from "react";
 
 type Tab = "home" | "accounts" | "transactions" | "settings";
 
@@ -1399,6 +1397,7 @@ FILE: components\views\HomeView.tsx
 ─────────────────────────────────────────
 "use client";
 import { Account, Debt } from "@/db";
+import { useFinanceMetrics } from "@/hooks/useFinanceMetrics";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 
 interface Props {
@@ -1407,14 +1406,10 @@ interface Props {
 }
 
 export function HomeView({ accounts, debts }: Props) {
-  const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
-  const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
-  const totalBalance = debitAccounts.reduce((sum, a) => sum + a.balance, 0);
-  const totalCreditLimit = creditAccounts.reduce((sum, a) => sum + a.balance, 0);
-  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
+  const { totalBalance, totalCreditLimit, totalDebt } = useFinanceMetrics(accounts, debts);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <StatsCards totalBalance={totalBalance} totalCreditLimit={totalCreditLimit} totalDebt={totalDebt} />
       <div className="card p-6 text-center text-muted-foreground">
         <p className="font-medium mb-2">📊 Графики и аналитика</p>
@@ -1431,9 +1426,12 @@ FILE: components\views\SettingsView.tsx
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "@/db";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export function SettingsView() {
   const [storageInfo, setStorageInfo] = useState<{ usage: string; quota: string } | null>(null);
+  const [showClearCacheDialog, setShowClearCacheDialog] = useState(false);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
 
   useEffect(() => {
     if ('storage' in navigator && 'estimate' in navigator.storage) {
@@ -1446,18 +1444,25 @@ export function SettingsView() {
   }, []);
 
   const handleClearAllData = async () => {
-    if (confirm("ВНИМАНИЕ: Это удалит ВСЕ счета, долги и операции безвозвратно. Продолжить?")) {
+    try {
       await db.delete();
       window.location.reload();
+    } catch (error) {
+      console.error("Ошибка очистки данных:", error);
+      alert("Не удалось очистить данные. Попробуйте ещё раз.");
     }
   };
 
   const handleClearCache = async () => {
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(key => caches.delete(key)));
-      alert("Кэш приложения очищен. Перезагрузите страницу.");
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key)));
+      }
       window.location.reload();
+    } catch (error) {
+      console.error("Ошибка очистки кэша:", error);
+      alert("Не удалось очистить кэш. Попробуйте ещё раз.");
     }
   };
 
@@ -1483,14 +1488,14 @@ export function SettingsView() {
         </button>
         
         <button 
-          onClick={handleClearCache}
+          onClick={() => setShowClearCacheDialog(true)}
           className="w-full text-left px-4 py-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors text-sm font-medium text-yellow-500"
         >
           🧹 Очистить кэш и пересобрать PWA
         </button>
 
         <button 
-          onClick={handleClearAllData}
+          onClick={() => setShowClearAllDialog(true)}
           className="w-full text-left px-4 py-3 rounded-lg bg-destructive/10 hover:bg-destructive/20 transition-colors text-sm font-medium text-destructive"
         >
           🗑️ Полная очистка всех данных
@@ -1501,6 +1506,24 @@ export function SettingsView() {
         <p>Finance Tracker v0.1.0</p>
         <p>ByteWizard © 2026</p>
       </div>
+
+      {showClearCacheDialog && (
+        <ConfirmDialog
+          title="Очистить кэш?"
+          message="Это очистит кэш приложения и перезагрузит страницу. Ваши данные (счета, долги, операции) не пострадают."
+          onConfirm={handleClearCache}
+          onCancel={() => setShowClearCacheDialog(false)}
+        />
+      )}
+
+      {showClearAllDialog && (
+        <ConfirmDialog
+          title="Полная очистка данных?"
+          message="ВНИМАНИЕ: Это удалит ВСЕ счета, долги и операции безвозвратно. Это действие нельзя отменить."
+          onConfirm={handleClearAllData}
+          onCancel={() => setShowClearAllDialog(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1510,6 +1533,7 @@ export function SettingsView() {
 FILE: components\views\TransactionsView.tsx
 ─────────────────────────────────────────
 "use client";
+import { useState } from "react";
 import { Transaction, Account, Debt } from "@/db";
 import { TransactionItem } from "@/components/lists/TransactionItem";
 
@@ -1520,19 +1544,36 @@ interface Props {
   onDelete: (id: string, name: string) => void;
 }
 
+const PAGE_SIZE = 20;
+
 export function TransactionsView({ transactions, accounts, debts, onDelete }: Props) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  const visibleTransactions = transactions?.slice(0, visibleCount) || [];
+  const hasMore = transactions && transactions.length > visibleCount;
+
   return (
     <div className="space-y-3 pb-20">
       {transactions && transactions.length > 0 ? (
-        transactions.map(tx => (
-          <TransactionItem 
-            key={tx.id} 
-            tx={tx} 
-            accounts={accounts} 
-            debts={debts} 
-            onDelete={onDelete} 
-          />
-        ))
+        <>
+          {visibleTransactions.map(tx => (
+            <TransactionItem 
+              key={tx.id} 
+              tx={tx} 
+              accounts={accounts} 
+              debts={debts} 
+              onDelete={onDelete} 
+            />
+          ))}
+          {hasMore && (
+            <button
+              onClick={() => setVisibleCount(prev => prev + PAGE_SIZE)}
+              className="w-full py-3 text-sm text-primary hover:underline font-medium"
+            >
+              Показать ещё ({transactions.length - visibleCount} осталось)
+            </button>
+          )}
+        </>
       ) : (
         <p className="text-muted-foreground text-sm text-center py-8 card">Операций пока нет</p>
       )}
@@ -1554,7 +1595,7 @@ export type BankType = 'sber' | 'tbank' | 'other' | 'person';
 export interface Account {
   id: string;
   name: string;
-  type: 'debit' | 'credit' | 'cash' | 'installment';
+  type: 'debit' | 'credit' | 'cash';
   balance: number;
   limit?: number;
   debtId?: string;
@@ -1597,6 +1638,7 @@ export interface Transaction {
   description?: string;
   date: number;
   createdAt: number;
+  updatedAt: number;
   synced: boolean;
 }
 
@@ -1928,7 +1970,7 @@ async function reverseTransactionEffects(tx: Transaction) {
 // ==========================================
 
 export async function createTransactionWithEffects(
-  txData: Omit<Transaction, 'id' | 'createdAt' | 'synced'>
+  txData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>
 ): Promise<string> {
   const txId = uuidv4();
   const now = Date.now();
@@ -1937,12 +1979,13 @@ export async function createTransactionWithEffects(
     ...txData,
     id: txId,
     createdAt: now,
+    updatedAt: now,
     synced: false,
   };
 
   await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
     await db.transactions.add(transaction);
-    await applyTransactionEffects(transaction); // Используем общую функцию
+    await applyTransactionEffects(transaction);
   });
 
   return txId;
@@ -2014,23 +2057,21 @@ export async function deleteDebt(id: string) {
   });
 }
 
-export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'synced'>>) {
+export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>) {
   const oldTx = await db.transactions.get(id);
   if (!oldTx) return;
 
   await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    // 1. Отменяем эффекты старой транзакции
     await reverseTransactionEffects(oldTx);
     
-    // 2. Обновляем саму транзакцию
     const updatedTx: Transaction = { 
       ...oldTx, 
       ...newData, 
+      updatedAt: Date.now(),
       synced: false 
     };
     await db.transactions.put(updatedTx);
     
-    // 3. Применяем эффекты новой транзакции
     await applyTransactionEffects(updatedTx);
   });
 }
@@ -2084,30 +2125,30 @@ FILE: hooks\useOnlineStatus.ts
 import { useState, useEffect } from "react";
 
 export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsOnline(navigator.onLine);
-      
-      const handleOnline = () => setIsOnline(true);
-      const handleOffline = () => setIsOnline(false);
+    // Устанавливаем реальное значение после монтирования на клиенте
+    setIsOnline(navigator.onLine);
+    
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
 
-      window.addEventListener("online", handleOnline);
-      window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
-      return () => {
-        window.removeEventListener("online", handleOnline);
-        window.removeEventListener("offline", handleOffline);
-      };
-    }
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, []);
 
-  return isOnline;
+  // Пока не определились — считаем "в сети" (чтобы не было мерцания)
+  return isOnline ?? true;
 }
 
 
 =============================================
 Обработано файлов: 20
 Пропущено файлов: 1
-Размер экспорта: 85337 байт
+Размер экспорта: 86150 байт
