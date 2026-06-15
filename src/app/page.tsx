@@ -20,8 +20,18 @@ export default function Home() {
   const debts = useLiveQuery(() => db.debts.toArray(), []);
   const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().limit(5).toArray(), []);
 
-  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
-  const totalBalance = accounts?.reduce((sum, a) => sum + a.balance, 0) || 0;
+    // Правильный расчет метрик
+    const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
+    const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
+    
+    // Свободные средства = только реальные деньги пользователя
+    const totalBalance = debitAccounts.reduce((sum, a) => sum + a.balance, 0);
+    
+    // Доступный кредитный лимит = деньги банка, которые можно потратить
+    const totalCreditLimit = creditAccounts.reduce((sum, a) => sum + a.balance, 0);
+    
+    // Общий долг = все обязательства
+    const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-2xl">
@@ -60,17 +70,34 @@ export default function Home() {
       </header>
 
       {/* Быстрая статистика */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="card">
+          <p className="text-sm text-muted-foreground">Свободные средства</p>
+          <p className="text-2xl font-bold text-accent mt-1">
+            ₽ {totalBalance.toLocaleString('ru-RU')}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Дебетовые карты и наличные
+          </p>
+        </div>
+        
+        <div className="card">
+          <p className="text-sm text-muted-foreground">Доступный лимит</p>
+          <p className="text-2xl font-bold text-primary mt-1">
+            ₽ {totalCreditLimit.toLocaleString('ru-RU')}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Кредитные карты (деньги банка)
+          </p>
+        </div>
+        
         <div className="card">
           <p className="text-sm text-muted-foreground">Общий долг</p>
           <p className="text-2xl font-bold text-destructive mt-1">
             ₽ {totalDebt.toLocaleString('ru-RU')}
           </p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-muted-foreground">Свободные средства</p>
-          <p className="text-2xl font-bold text-accent mt-1">
-            ₽ {totalBalance.toLocaleString('ru-RU')}
+          <p className="text-xs text-muted-foreground mt-1">
+            Все обязательства
           </p>
         </div>
       </div>
