@@ -9,9 +9,6 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
-    // Только fallback для оффлайна, всё остальное делает библиотека
-    navigateFallback: "/offline.html",
-    navigateFallbackAllowlist: [/^\/$/],
   },
 });
 
