@@ -415,10 +415,25 @@ export async function updateAccount(id: string, data: Partial<Omit<Account, 'id'
 }
 
 export async function deleteAccount(id: string) {
-  await db.transaction('rw', db.accounts, db.transactions, async () => {
-    await db.transactions.where('fromAccountId').equals(id).delete();
-    await db.transactions.where('toAccountId').equals(id).delete();
-    await db.accounts.delete(id);
+  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
+    const acc = await db.accounts.get(id);
+    
+    if (acc) {
+      // Если это кредитка — удаляем связанный долг
+      if (acc.type === 'credit' && acc.debtId) {
+        // Сначала удаляем все транзакции, связанные с долгом
+        await db.transactions.where('debtId').equals(acc.debtId).delete();
+        // Удаляем сам долг
+        await db.debts.delete(acc.debtId);
+      }
+      
+      // Удаляем все транзакции, связанные со счётом
+      await db.transactions.where('fromAccountId').equals(id).delete();
+      await db.transactions.where('toAccountId').equals(id).delete();
+      
+      // Удаляем сам счёт
+      await db.accounts.delete(id);
+    }
   });
 }
 
@@ -431,19 +446,25 @@ export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'up
 }
 
 export async function deleteDebt(id: string) {
-  await db.transaction('rw', db.debts, db.transactions, db.accounts, async () => {
-    await db.transactions.where('debtId').equals(id).delete();
-    
+  await db.transaction('rw', db.debts, db.accounts, db.transactions, async () => {
     const debt = await db.debts.get(id);
-    if (debt?.linkedAccountId) {
-      const acc = await db.accounts.get(debt.linkedAccountId);
-      if (acc) {
-        acc.debtId = undefined;
-        await db.accounts.put(acc);
-      }
-    }
     
-    await db.debts.delete(id);
+    if (debt) {
+      // Если это долг кредитной карты — удаляем связанный счёт
+      if (debt.type === 'credit_card' && debt.linkedAccountId) {
+        // Сначала удаляем все транзакции, связанные со счётом
+        await db.transactions.where('fromAccountId').equals(debt.linkedAccountId).delete();
+        await db.transactions.where('toAccountId').equals(debt.linkedAccountId).delete();
+        // Удаляем сам счёт
+        await db.accounts.delete(debt.linkedAccountId);
+      }
+      
+      // Удаляем все транзакции, связанные с долгом
+      await db.transactions.where('debtId').equals(id).delete();
+      
+      // Удаляем сам долг
+      await db.debts.delete(id);
+    }
   });
 }
 
