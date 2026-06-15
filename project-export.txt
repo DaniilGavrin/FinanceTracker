@@ -1,0 +1,346 @@
+﻿=== Finance Tracker Project Export ===
+Дата: 15.06.2026 15:30:40
+Структура: src/
+
+=============================================
+
+─────────────────────────────────────────
+FILE: app\globals.css
+─────────────────────────────────────────
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --accent: #10b981;
+  --destructive: #ef4444;
+  --muted: #334155;
+  --muted-foreground: #94a3b8;
+  --card: #1e293b;
+  --card-foreground: #f8fafc;
+  --border: #334155;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #ffffff;
+    --foreground: #0f172a;
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+    --secondary: #f1f5f9;
+    --secondary-foreground: #0f172a;
+    --accent: #059669;
+    --destructive: #dc2626;
+    --muted: #e2e8f0;
+    --muted-foreground: #64748b;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --border: #e2e8f0;
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .card {
+    @apply bg-card text-card-foreground rounded-xl border border-border p-4 shadow-sm;
+  }
+  .btn-primary {
+    @apply bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 active:scale-[0.98] transition-all;
+  }
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 active:scale-[0.98] transition-all;
+  }
+}
+
+
+─────────────────────────────────────────
+FILE: app\layout.tsx
+─────────────────────────────────────────
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+
+const inter = Inter({ subsets: ["latin", "cyrillic"] });
+
+export const metadata: Metadata = {
+  title: "Finance Tracker",
+  description: "Учёт расходов, доходов и долгов с оффлайн-режимом",
+  manifest: "/manifest.json",
+  themeColor: "#0f172a",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Finance Tracker",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="ru">
+      <body className={`${inter.className} antialiased`}>
+        <main className="min-h-screen flex flex-col">
+          {children}
+        </main>
+      </body>
+    </html>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: app\page.tsx
+─────────────────────────────────────────
+"use client";
+
+import { useLiveQuery } from "dexie-react-hooks";
+import { db, Account, Debt } from "@/db";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+
+export default function Home() {
+  const isOnline = useOnlineStatus();
+
+  // Подписываемся на изменения в базе данных в реальном времени
+  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
+  const debts = useLiveQuery(() => db.debts.toArray(), []);
+
+  // Считаем общие суммы
+  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
+  const totalBalance = accounts?.reduce((sum, a) => sum + a.balance, 0) || 0;
+
+  return (
+    <div className="container mx-auto px-4 py-6 max-w-2xl">
+      {/* Шапка */}
+      <header className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-bold tracking-tight">Finance Tracker</h1>
+        <div
+          className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
+            isOnline
+              ? "bg-green-500/10 text-green-400 border-green-500/20"
+              : "bg-red-500/10 text-red-400 border-red-500/20"
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full animate-pulse ${
+              isOnline ? "bg-green-400" : "bg-red-400"
+            }`}
+          ></span>
+          {isOnline ? "В сети" : "Оффлайн"}
+        </div>
+      </header>
+
+      {/* Быстрая статистика */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="card">
+          <p className="text-sm text-muted-foreground">Общий долг</p>
+          <p className="text-2xl font-bold text-destructive mt-1">
+            ₽ {totalDebt.toLocaleString('ru-RU')}
+          </p>
+        </div>
+        <div className="card">
+          <p className="text-sm text-muted-foreground">Свободные средства</p>
+          <p className="text-2xl font-bold text-accent mt-1">
+            ₽ {totalBalance.toLocaleString('ru-RU')}
+          </p>
+        </div>
+      </div>
+
+      {/* Список счетов */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold mb-3">Счета ({accounts?.length || 0})</h2>
+        <div className="space-y-3">
+          {accounts && accounts.length > 0 ? (
+            accounts.map((acc) => (
+              <div key={acc.id} className="card flex justify-between items-center">
+                <div>
+                  <p className="font-medium">{acc.name}</p>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type}
+                  </p>
+                </div>
+                <p className="font-mono text-lg">₽ {acc.balance.toLocaleString('ru-RU')}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4">Нет счетов. Добавь первый!</p>
+          )}
+        </div>
+      </section>
+
+      {/* Список долгов */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold mb-3">Обязательства ({debts?.length || 0})</h2>
+        <div className="space-y-3">
+          {debts && debts.length > 0 ? (
+            debts.map((debt) => (
+              <div key={debt.id} className="card flex justify-between items-center">
+                <div>
+                  <p className="font-medium">{debt.name}</p>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    {debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : 'Рассрочка'}
+                  </p>
+                </div>
+                <p className="font-mono text-lg text-destructive">
+                  - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4">Долгов нет. Так держать!</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: db\index.ts
+─────────────────────────────────────────
+import Dexie, { type EntityTable } from 'dexie';
+import { v4 as uuidv4 } from 'uuid';
+
+// 1. Типы данных (Интерфейсы)
+export interface Account {
+  id: string;
+  name: string;
+  type: 'debit' | 'credit' | 'cash' | 'installment';
+  balance: number;
+  limit?: number;
+  updatedAt: number;
+  synced: boolean;
+}
+
+export interface Debt {
+  id: string;
+  name: string;
+  type: 'bank_loan' | 'person' | 'installment';
+  totalAmount: number;
+  currentAmount: number;
+  interestRate?: number;
+  updatedAt: number;
+  synced: boolean;
+}
+
+export interface Transaction {
+  id: string;
+  accountId?: string;
+  debtId?: string;
+  amount: number;
+  category?: string;
+  description?: string;
+  date: number; // Timestamp
+  type: 'income' | 'expense' | 'transfer' | 'debt_payment';
+  createdAt: number;
+  synced: boolean;
+}
+
+// 2. Инициализация базы данных
+export class FinanceDB extends Dexie {
+  accounts!: EntityTable<Account, 'id'>;
+  debts!: EntityTable<Debt, 'id'>;
+  transactions!: EntityTable<Transaction, 'id'>;
+
+  constructor() {
+    super('FinanceTrackerDB');
+    
+    // Определяем таблицы и индексы
+    this.version(1).stores({
+      accounts: 'id, type, synced, updatedAt',
+      debts: 'id, type, synced, updatedAt',
+      transactions: 'id, accountId, debtId, date, type, synced, createdAt'
+    });
+  }
+}
+
+// Экспортируем инстанс базы
+export const db = new FinanceDB();
+
+// 3. Вспомогательные функции для быстрого создания записей
+export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>) {
+  return db.accounts.add({
+    ...data,
+    id: uuidv4(),
+    updatedAt: Date.now(),
+    synced: false,
+  });
+}
+
+export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
+  return db.debts.add({
+    ...data,
+    id: uuidv4(),
+    updatedAt: Date.now(),
+    synced: false,
+  });
+}
+
+export function createTransaction(data: Omit<Transaction, 'id' | 'createdAt' | 'synced'>) {
+  return db.transactions.add({
+    ...data,
+    id: uuidv4(),
+    createdAt: Date.now(),
+    synced: false,
+  });
+}
+
+
+─────────────────────────────────────────
+FILE: hooks\useOnlineStatus.ts
+─────────────────────────────────────────
+"use client";
+import { useState, useEffect } from "react";
+
+export function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsOnline(navigator.onLine);
+      
+      const handleOnline = () => setIsOnline(true);
+      const handleOffline = () => setIsOnline(false);
+
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
+
+      return () => {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+      };
+    }
+  }, []);
+
+  return isOnline;
+}
+
+
+=============================================
+Обработано файлов: 5
+Пропущено файлов: 1
+Размер экспорта: 11507 байт

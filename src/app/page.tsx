@@ -1,17 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, Account, Debt } from "@/db";
+import { db } from "@/db";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { AddAccountForm } from "@/components/AddAccountForm";
+import { AddDebtForm } from "@/components/AddDebtForm";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showAddDebt, setShowAddDebt] = useState(false);
 
-  // Подписываемся на изменения в базе данных в реальном времени
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
 
-  // Считаем общие суммы
   const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
   const totalBalance = accounts?.reduce((sum, a) => sum + a.balance, 0) || 0;
 
@@ -54,7 +57,15 @@ export default function Home() {
 
       {/* Список счетов */}
       <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-3">Счета ({accounts?.length || 0})</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Счета ({accounts?.length || 0})</h2>
+          <button
+            onClick={() => setShowAddAccount(true)}
+            className="text-sm text-primary hover:underline"
+          >
+            + Добавить
+          </button>
+        </div>
         <div className="space-y-3">
           {accounts && accounts.length > 0 ? (
             accounts.map((acc) => (
@@ -62,7 +73,7 @@ export default function Home() {
                 <div>
                   <p className="font-medium">{acc.name}</p>
                   <p className="text-xs text-muted-foreground capitalize">
-                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type}
+                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type === 'cash' ? 'Наличные' : acc.type}
                   </p>
                 </div>
                 <p className="font-mono text-lg">₽ {acc.balance.toLocaleString('ru-RU')}</p>
@@ -76,7 +87,15 @@ export default function Home() {
 
       {/* Список долгов */}
       <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-3">Обязательства ({debts?.length || 0})</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Обязательства ({debts?.length || 0})</h2>
+          <button
+            onClick={() => setShowAddDebt(true)}
+            className="text-sm text-primary hover:underline"
+          >
+            + Добавить
+          </button>
+        </div>
         <div className="space-y-3">
           {debts && debts.length > 0 ? (
             debts.map((debt) => (
@@ -97,6 +116,10 @@ export default function Home() {
           )}
         </div>
       </section>
+
+      {/* Модальные окна */}
+      {showAddAccount && <AddAccountForm onClose={() => setShowAddAccount(false)} />}
+      {showAddDebt && <AddDebtForm onClose={() => setShowAddDebt(false)} />}
     </div>
   );
 }
