@@ -142,19 +142,59 @@ export default function Home() {
         <h2 className="text-lg font-semibold mb-3">Последние операции</h2>
         <div className="space-y-3">
           {transactions && transactions.length > 0 ? (
-            transactions.map((tx) => (
-              <div key={tx.id} className="card flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{tx.description || tx.type}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(tx.date).toLocaleDateString('ru-RU')}
+            transactions.map((tx) => {
+              // Находим связанные счета и долги
+              const fromAcc = accounts?.find(a => a.id === tx.fromAccountId);
+              const toAcc = accounts?.find(a => a.id === tx.toAccountId);
+              const debt = debts?.find(d => d.id === tx.debtId);
+
+              let title = tx.description || 'Без описания';
+              let subtitle = '';
+              let amountPrefix = '';
+              let amountColor = '';
+
+              switch (tx.type) {
+                case 'expense':
+                  amountPrefix = '-';
+                  amountColor = 'text-destructive';
+                  subtitle = fromAcc ? `с ${fromAcc.name}` : 'Расход';
+                  break;
+                case 'income':
+                  amountPrefix = '+';
+                  amountColor = 'text-accent';
+                  subtitle = toAcc ? `на ${toAcc.name}` : 'Доход';
+                  break;
+                case 'transfer':
+                  amountPrefix = '↔';
+                  amountColor = 'text-primary';
+                  subtitle = fromAcc && toAcc ? `${fromAcc.name} → ${toAcc.name}` : 'Перевод';
+                  break;
+                case 'debt_payment':
+                  amountPrefix = '-';
+                  amountColor = 'text-accent';
+                  subtitle = debt ? `гашение: ${debt.name}` : 'Платёж по долгу';
+                  break;
+                case 'debt_borrow':
+                  amountPrefix = '+';
+                  amountColor = 'text-destructive';
+                  subtitle = debt ? `заём: ${debt.name}` : 'Новый долг';
+                  break;
+              }
+
+              return (
+                <div key={tx.id} className="card flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{title}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {subtitle} • {new Date(tx.date).toLocaleDateString('ru-RU')}
+                    </p>
+                  </div>
+                  <p className={`font-mono text-lg ml-4 ${amountColor}`}>
+                    {amountPrefix} {tx.amount.toLocaleString('ru-RU')} ₽
                   </p>
                 </div>
-                <p className={`font-mono text-lg ${tx.type === 'expense' || tx.type === 'debt_payment' ? 'text-destructive' : 'text-accent'}`}>
-                  {tx.type === 'expense' || tx.type === 'debt_payment' ? '-' : '+'} ₽ {tx.amount.toLocaleString('ru-RU')}
-                </p>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p className="text-muted-foreground text-sm text-center py-4">Операций пока нет</p>
           )}
