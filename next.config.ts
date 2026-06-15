@@ -9,7 +9,9 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
-    // Явно указываем, что делать, если сеть недоступна при первом запросе
+    // КРИТИЧНО: что отдавать при навигации оффлайн
+    navigateFallback: "/offline.html",
+    // Кэшировать все навигационные запросы
     runtimeCaching: [
       {
         urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
@@ -18,6 +20,35 @@ const withPWA = withPWAInit({
           cacheName: "google-fonts",
           expiration: {
             maxEntries: 4,
+            maxAgeSeconds: 365 * 24 * 60 * 60,
+          },
+        },
+      },
+      {
+        // Кэшировать все навигации (HTML-страницы)
+        urlPattern: ({ request }) => request.mode === "navigate",
+        handler: "NetworkFirst",
+        options: {
+          cacheName: "pages-cache",
+          networkTimeoutSeconds: 3,
+          expiration: {
+            maxEntries: 50,
+            maxAgeSeconds: 30 * 24 * 60 * 60, // 30 дней
+          },
+        },
+      },
+      {
+        // Кэшировать статику (JS, CSS, картинки)
+        urlPattern: ({ request }) => 
+          request.destination === "script" ||
+          request.destination === "style" ||
+          request.destination === "image" ||
+          request.destination === "font",
+        handler: "CacheFirst",
+        options: {
+          cacheName: "static-cache",
+          expiration: {
+            maxEntries: 100,
             maxAgeSeconds: 365 * 24 * 60 * 60, // 1 год
           },
         },
@@ -27,9 +58,8 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  // Отключаем попытки Next.js стучаться во внешние источники при сборке
   images: {
-    unoptimized: true, // Если не используешь next/image, это ускорит работу
+    unoptimized: true,
   },
 };
 

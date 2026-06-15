@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 15.06.2026 18:14:15
+Дата: 15.06.2026 19:50:28
 Структура: src/
 
 =============================================
@@ -98,10 +98,7 @@ body {
 FILE: app\layout.tsx
 ─────────────────────────────────────────
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin", "cyrillic"] });
 
 export const metadata: Metadata = {
   title: "Finance Tracker",
@@ -130,7 +127,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className={`${inter.className} antialiased`}>
+      {/* Используем системные шрифты, которые уже есть в globals.css. Никаких внешних запросов! */}
+      <body className="antialiased">
         {children}
       </body>
     </html>
@@ -147,6 +145,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, deleteAccount, deleteDebt, deleteTransaction } from "@/db";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { usePersistentStorage } from "@/hooks/usePersistentStorage";
 
 import { AddAccountForm } from "@/components/AddAccountForm";
 import { AddDebtForm } from "@/components/AddDebtForm";
@@ -164,6 +163,7 @@ type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const persistentStorage = usePersistentStorage();
   const [activeTab, setActiveTab] = useState<Tab>("home");
   
   // Модалки
@@ -215,7 +215,7 @@ export default function Home() {
 
       {/* Основной контент */}
       <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl">
-        {activeTab === "home" && <HomeView accounts={accounts} debts={debts} />}
+        {activeTab === "home" && <HomeView accounts={accounts} debts={debts} transactions={transactions} />}
         {activeTab === "accounts" && (
           <AccountsView 
             accounts={accounts} 
@@ -603,6 +603,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, TransactionType } from "@/db";
 import { createTransactionWithEffects } from "@/db";
+import { DEFAULT_CATEGORIES, Category } from "@/lib/categories";
 
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<TransactionType>("expense");
@@ -612,6 +613,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [toAccountId, setToAccountId] = useState("");
   const [debtId, setDebtId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categoryId, setCategoryId] = useState("");
 
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
@@ -644,6 +646,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
         description: description || undefined,
         fromAccountId: fromAccountId || undefined,
         toAccountId: toAccountId || undefined,
+        categoryId: categoryId || undefined,
         debtId: debtId || undefined,
         date: Date.now(),
       });
@@ -702,6 +705,30 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               required
             />
           </div>
+
+          {/* Выбор категории */}
+          {(type === "expense" || type === "income") && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Категория</label>
+              <div className="grid grid-cols-4 gap-2">
+                {DEFAULT_CATEGORIES.filter(c => c.type === type).map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCategoryId(cat.id)}
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${
+                      categoryId === cat.id
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "bg-secondary border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-xl mb-1">{cat.icon}</span>
+                    <span className="text-[10px] text-center leading-tight">{cat.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {type === "expense" && (
             <div>
@@ -1078,6 +1105,137 @@ export function FAQModal({ onClose }: { onClose: () => void }) {
 
 
 ─────────────────────────────────────────
+FILE: components\charts\ChartPicker.tsx
+─────────────────────────────────────────
+"use client";
+
+import { AVAILABLE_CHARTS } from "@/lib/charts/registry";
+
+interface Props {
+  activeChartIds: string[];
+  onToggle: (chartId: string) => void;
+  onClose: () => void;
+}
+
+export function ChartPicker({ activeChartIds, onToggle, onClose }: Props) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold">Добавить графики</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-secondary transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-4">
+          Выберите графики, которые хотите видеть на главной странице
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {AVAILABLE_CHARTS.map((chart) => {
+            const isActive = activeChartIds.includes(chart.id);
+            return (
+              <button
+                key={chart.id}
+                onClick={() => onToggle(chart.id)}
+                className={`p-4 rounded-lg border text-left transition-all ${
+                  isActive
+                    ? "bg-primary/10 border-primary"
+                    : "bg-secondary border-border hover:border-primary/50"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">{chart.icon}</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{chart.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {chart.description}
+                    </p>
+                  </div>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    isActive ? "bg-primary border-primary" : "border-muted-foreground"
+                  }`}>
+                    {isActive && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="btn-primary w-full"
+          >
+            Готово
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\charts\ChartWidget.tsx
+─────────────────────────────────────────
+"use client";
+
+import { ChartData, getChartById } from "@/lib/charts/registry";
+
+interface Props {
+  chartId: string;
+  data: ChartData;
+  onRemove: (chartId: string) => void;
+}
+
+export function ChartWidget({ chartId, data, onRemove }: Props) {
+  const chart = getChartById(chartId);
+  
+  if (!chart) return null;
+  
+  const ChartComponent = chart.component;
+
+  return (
+    <div className="card relative group">
+      {/* Кнопка удаления */}
+      <button
+        onClick={() => onRemove(chartId)}
+        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        title="Удалить график"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      {/* Заголовок */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xl">{chart.icon}</span>
+        <h3 className="font-semibold text-sm">{chart.name}</h3>
+      </div>
+
+      {/* Сам график */}
+      <ChartComponent {...data} />
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
 FILE: components\dashboard\StatsCards.tsx
 ─────────────────────────────────────────
 interface Props {
@@ -1269,6 +1427,7 @@ export function DebtItem({ debt, onDelete }: Props) {
 FILE: components\lists\TransactionItem.tsx
 ─────────────────────────────────────────
 import { Transaction, Account, Debt } from "@/db";
+import { getCategoryById } from "@/lib/categories";
 
 interface Props {
   tx: Transaction;
@@ -1281,8 +1440,9 @@ export function TransactionItem({ tx, accounts, debts, onDelete }: Props) {
   const fromAcc = accounts?.find(a => a.id === tx.fromAccountId);
   const toAcc = accounts?.find(a => a.id === tx.toAccountId);
   const debt = debts?.find(d => d.id === tx.debtId);
+  const category = tx.categoryId ? getCategoryById(tx.categoryId) : null;
 
-  let title = tx.description || 'Без описания';
+  let title = tx.description || category?.name || 'Без описания';
   let subtitle = '';
   let amountPrefix = '';
   let amountColor = '';
@@ -1312,6 +1472,10 @@ export function TransactionItem({ tx, accounts, debts, onDelete }: Props) {
 
   return (
     <div className="card flex justify-between items-center group">
+      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-xl shrink-0">
+          {category ? category.icon : '📄'}
+      </div>
+
       <div className="flex-1 min-w-0">
         <p className="font-medium truncate">{title}</p>
         <p className="text-xs text-muted-foreground truncate">
@@ -1396,25 +1560,117 @@ export function AccountsView({ accounts, debts, onAddAccount, onAddDebt, onDelet
 FILE: components\views\HomeView.tsx
 ─────────────────────────────────────────
 "use client";
-import { Account, Debt } from "@/db";
+
+import { useState, useEffect } from "react";
+import { Account, Debt, Transaction } from "@/db";
 import { useFinanceMetrics } from "@/hooks/useFinanceMetrics";
 import { StatsCards } from "@/components/dashboard/StatsCards";
+import { ChartWidget } from "@/components/charts/ChartWidget";
+import { ChartPicker } from "@/components/charts/ChartPicker";
 
 interface Props {
   accounts: Account[] | undefined;
   debts: Debt[] | undefined;
+  transactions: Transaction[] | undefined;
 }
 
-export function HomeView({ accounts, debts }: Props) {
+const STORAGE_KEY = "finance-tracker-active-charts";
+const DEFAULT_CHARTS = ["expenses-by-category"]; // По умолчанию показываем только круговую
+
+export function HomeView({ accounts, debts, transactions }: Props) {
   const { totalBalance, totalCreditLimit, totalDebt } = useFinanceMetrics(accounts, debts);
+  
+  const [activeChartIds, setActiveChartIds] = useState<string[]>(DEFAULT_CHARTS);
+  const [showPicker, setShowPicker] = useState(false);
+
+  // Загружаем настройки из localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        setActiveChartIds(JSON.parse(saved));
+      } catch (e) {
+        console.error("Ошибка загрузки настроек графиков:", e);
+      }
+    }
+  }, []);
+
+  // Сохраняем настройки в localStorage
+  const updateCharts = (newIds: string[]) => {
+    setActiveChartIds(newIds);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newIds));
+  };
+
+  const handleToggleChart = (chartId: string) => {
+    const newIds = activeChartIds.includes(chartId)
+      ? activeChartIds.filter(id => id !== chartId)
+      : [...activeChartIds, chartId];
+    updateCharts(newIds);
+  };
+
+  const handleRemoveChart = (chartId: string) => {
+    updateCharts(activeChartIds.filter(id => id !== chartId));
+  };
+
+  const chartData = {
+    accounts: accounts || [],
+    debts: debts || [],
+    transactions: transactions || [],
+  };
 
   return (
     <div className="space-y-6 pb-20">
+      {/* Карточки статистики */}
       <StatsCards totalBalance={totalBalance} totalCreditLimit={totalCreditLimit} totalDebt={totalDebt} />
-      <div className="card p-6 text-center text-muted-foreground">
-        <p className="font-medium mb-2">📊 Графики и аналитика</p>
-        <p className="text-sm">Здесь скоро появятся круговые диаграммы расходов и тренды баланса.</p>
-      </div>
+
+      {/* Секция графиков */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Графики</h2>
+          <button
+            onClick={() => setShowPicker(true)}
+            className="text-sm text-primary hover:underline flex items-center gap-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Добавить
+          </button>
+        </div>
+
+        {activeChartIds.length > 0 ? (
+          <div className="space-y-4">
+            {activeChartIds.map(chartId => (
+              <ChartWidget
+                key={chartId}
+                chartId={chartId}
+                data={chartData}
+                onRemove={handleRemoveChart}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="card text-center py-8">
+            <p className="text-muted-foreground mb-3">Нет активных графиков</p>
+            <button
+              onClick={() => setShowPicker(true)}
+              className="btn-primary text-sm"
+            >
+              Выбрать графики
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* Модалка выбора */}
+      {showPicker && (
+        <ChartPicker
+          activeChartIds={activeChartIds}
+          onToggle={handleToggleChart}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1427,18 +1683,27 @@ FILE: components\views\SettingsView.tsx
 import { useState, useEffect } from "react";
 import { db } from "@/db";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { usePersistentStorage } from "@/hooks/usePersistentStorage";
 
 export function SettingsView() {
-  const [storageInfo, setStorageInfo] = useState<{ usage: string; quota: string } | null>(null);
+  const [storageInfo, setStorageInfo] = useState<{ usage: string; quota: string; percent: number } | null>(null);
   const [showClearCacheDialog, setShowClearCacheDialog] = useState(false);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const persistentStorage = usePersistentStorage();
 
   useEffect(() => {
     if ('storage' in navigator && 'estimate' in navigator.storage) {
       navigator.storage.estimate().then(estimate => {
-        const usage = estimate.usage ? (estimate.usage / 1024 / 1024).toFixed(2) + ' МБ' : '0 МБ';
-        const quota = estimate.quota ? (estimate.quota / 1024 / 1024).toFixed(2) + ' МБ' : 'Неизвестно';
-        setStorageInfo({ usage, quota });
+        if (estimate.usage !== undefined && estimate.quota !== undefined) {
+          const usageMB = (estimate.usage / 1024 / 1024).toFixed(2);
+          const quotaMB = (estimate.quota / 1024 / 1024).toFixed(2);
+          const percent = ((estimate.usage / estimate.quota) * 100).toFixed(3);
+          setStorageInfo({ 
+            usage: `${usageMB} МБ`, 
+            quota: `${quotaMB} МБ`,
+            percent: parseFloat(percent)
+          });
+        }
       });
     }
   }, []);
@@ -1469,15 +1734,71 @@ export function SettingsView() {
   return (
     <div className="space-y-4 pb-20">
       <div className="card">
-        <h3 className="font-semibold mb-3">Хранилище</h3>
+        <h3 className="font-semibold mb-3">Локальное хранилище</h3>
         {storageInfo ? (
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Использовано: <span className="text-foreground font-mono">{storageInfo.usage}</span></p>
-            <p>Доступно: <span className="text-foreground font-mono">{storageInfo.quota}</span></p>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>Использовано: <span className="text-foreground font-mono">{storageInfo.usage}</span></p>
+              <p>Квота браузера: <span className="text-foreground font-mono">{storageInfo.quota}</span></p>
+            </div>
+            
+            {/* Прогресс-бар */}
+            <div className="space-y-1">
+              <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${storageInfo.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                {storageInfo.percent}% от квоты
+              </p>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              💡 Квота — это лимит, который браузер выделил для нашего приложения. 
+              Она не связана с памятью вашего устройства. При достижении лимита браузер может автоматически очистить старые данные.
+            </p>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Загрузка информации...</p>
         )}
+      </div>
+
+      {/* Защита данных */}
+      <div className="card">
+        <h3 className="font-semibold mb-3">Защита данных</h3>
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            persistentStorage.isPersisted 
+              ? "bg-green-500/10 text-green-400" 
+              : persistentStorage.isPersisted === null 
+                ? "bg-muted text-muted-foreground" 
+                : "bg-yellow-500/10 text-yellow-400"
+          }`}>
+            {persistentStorage.isPersisted 
+              ? "✓" 
+              : persistentStorage.isPersisted === null 
+                ? "..." 
+                : "!"}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {persistentStorage.isPersisted 
+                ? "Постоянное хранилище активно" 
+                : persistentStorage.isPersisted === null 
+                  ? "Проверка..." 
+                  : "Стандартное хранилище"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {persistentStorage.isPersisted 
+                ? "Браузер не удалит ваши данные при нехватке места" 
+                : persistentStorage.isPersisted === null 
+                  ? "Определяем статус..." 
+                  : "Браузер может очистить данные при нехватке места"}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="card space-y-3">
@@ -1634,7 +1955,7 @@ export interface Transaction {
   fromAccountId?: string;
   toAccountId?: string;
   debtId?: string;
-  category?: string;
+  categoryId?: string; 
   description?: string;
   date: number;
   createdAt: number;
@@ -1651,20 +1972,14 @@ export class FinanceDB extends Dexie {
   constructor() {
     super('FinanceTrackerDB');
     
-    this.version(3).stores({
+    this.version(4).stores({
       accounts: 'id, type, synced, updatedAt, debtId, bank',
       debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
-      transactions: 'id, fromAccountId, toAccountId, debtId, date, type, synced, createdAt'
+      transactions: 'id, fromAccountId, toAccountId, debtId, categoryId, date, type, synced, createdAt' // ← ДОБАВИТЬ categoryId
     }).upgrade(tx => {
-      return tx.table('accounts').toCollection().modify(acc => {
-        acc.bank = acc.bank || undefined;
-        acc.openedAt = acc.openedAt || undefined;
-      }).then(() => {
-        return tx.table('debts').toCollection().modify(debt => {
-          debt.bank = debt.bank || undefined;
-          debt.startDate = debt.startDate || undefined;
-          debt.termMonths = debt.termMonths || undefined;
-        });
+      // Миграция для старых транзакций: добавляем categoryId как undefined
+      return tx.table('transactions').toCollection().modify(tx => {
+        tx.categoryId = tx.categoryId || undefined;
       });
     });
   }
@@ -2148,7 +2463,377 @@ export function useOnlineStatus() {
 }
 
 
+─────────────────────────────────────────
+FILE: hooks\usePersistentStorage.ts
+─────────────────────────────────────────
+"use client";
+import { useEffect, useState } from "react";
+
+interface PersistentStorageStatus {
+  isPersisted: boolean | null; // null = еще не проверили, true/false = результат
+  isSupported: boolean;
+}
+
+export function usePersistentStorage(): PersistentStorageStatus {
+  const [status, setStatus] = useState<PersistentStorageStatus>({
+    isPersisted: null,
+    isSupported: false,
+  });
+
+  useEffect(() => {
+    // Проверяем поддержку API
+    if (!('storage' in navigator) || !('persist' in navigator.storage)) {
+      setStatus({ isPersisted: false, isSupported: false });
+      return;
+    }
+
+    // Проверяем и запрашиваем persistent storage
+    const checkPersistence = async () => {
+      try {
+        const isPersisted = await navigator.storage.persisted();
+        
+        if (!isPersisted) {
+          // Если еще не persistent — запрашиваем
+          const granted = await navigator.storage.persist();
+          setStatus({ isPersisted: granted, isSupported: true });
+        } else {
+          setStatus({ isPersisted: true, isSupported: true });
+        }
+      } catch (error) {
+        console.error('Ошибка проверки persistent storage:', error);
+        setStatus({ isPersisted: false, isSupported: true });
+      }
+    };
+
+    checkPersistence();
+  }, []);
+
+  return status;
+}
+
+
+─────────────────────────────────────────
+FILE: lib\categories.ts
+─────────────────────────────────────────
+export type CategoryType = 'income' | 'expense';
+
+export interface Category {
+  id: string;
+  name: string;
+  icon: string;
+  type: CategoryType;
+}
+
+export const DEFAULT_CATEGORIES: Category[] = [
+  // Расходы
+  { id: 'food', name: 'Еда и продукты', icon: '🍔', type: 'expense' },
+  { id: 'transport', name: 'Транспорт', icon: '🚕', type: 'expense' },
+  { id: 'home', name: 'Жильё и ЖКХ', icon: '🏠', type: 'expense' },
+  { id: 'entertainment', name: 'Развлечения', icon: '🎬', type: 'expense' },
+  { id: 'health', name: 'Здоровье', icon: '💊', type: 'expense' },
+  { id: 'shopping', name: 'Покупки', icon: '🛍️', type: 'expense' },
+  { id: 'education', name: 'Обучение', icon: '📚', type: 'expense' },
+  { id: 'debt_payment', name: 'Платеж по долгу', icon: '💳', type: 'expense' },
+  { id: 'other_expense', name: 'Другое', icon: '📦', type: 'expense' },
+  
+  // Доходы
+  { id: 'salary', name: 'Зарплата', icon: '💰', type: 'income' },
+  { id: 'freelance', name: 'Фриланс / Подработка', icon: '💻', type: 'income' },
+  { id: 'gift', name: 'Подарки', icon: '🎁', type: 'income' },
+  { id: 'cashback', name: 'Кэшбэк / Проценты', icon: '🔄', type: 'income' },
+  { id: 'other_income', name: 'Другое', icon: '💵', type: 'income' },
+];
+
+export function getCategoryById(id: string): Category | undefined {
+  return DEFAULT_CATEGORIES.find(c => c.id === id);
+}
+
+
+─────────────────────────────────────────
+FILE: lib\charts\BalanceTrendChart.tsx
+─────────────────────────────────────────
+"use client";
+
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { ChartData } from "./registry";
+
+export function BalanceTrendChart({ transactions, accounts }: ChartData) {
+  const days = 30;
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  
+  const currentBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+  
+  const data = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const dayStart = now - i * dayMs;
+    
+    let balance = currentBalance;
+    const futureTx = transactions.filter(tx => tx.date >= dayStart);
+    
+    for (const tx of futureTx) {
+      if (tx.type === "income") balance -= tx.amount;
+      if (tx.type === "expense") balance += tx.amount;
+      // Для transfer баланс не меняется в сумме, так как деньги просто перемещаются
+    }
+    
+    data.push({
+      date: new Date(dayStart).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
+      balance: Math.round(balance),
+    });
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+        Недостаточно данных для графика
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis 
+          dataKey="date" 
+          stroke="var(--muted-foreground)" 
+          fontSize={10}
+          interval="preserveStartEnd"
+        />
+        <YAxis 
+          stroke="var(--muted-foreground)" 
+          fontSize={10}
+          tickFormatter={(value: any) => value != null ? `${(Number(value) / 1000).toFixed(0)}к` : '0'}
+        />
+        <Tooltip 
+          formatter={(value: any) => value != null ? `${Number(value).toLocaleString('ru-RU')} ₽` : '0 ₽'}
+          contentStyle={{ 
+            backgroundColor: "var(--card)", 
+            border: "1px solid var(--border)",
+            borderRadius: "8px",
+            color: "var(--foreground)"
+          }}
+        />
+        <Line 
+          type="monotone" 
+          dataKey="balance" 
+          stroke="var(--primary)" 
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 6 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: lib\charts\ExpensesByCategoryChart.tsx
+─────────────────────────────────────────
+"use client";
+
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { ChartData } from "./registry";
+import { getCategoryById } from "@/lib/categories";
+
+export function ExpensesByCategoryChart({ transactions }: ChartData) {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  
+  const expenses = transactions.filter(
+    tx => tx.type === "expense" && tx.date >= startOfMonth && tx.categoryId
+  );
+
+  const grouped = expenses.reduce((acc, tx) => {
+    const catId = tx.categoryId!;
+    acc[catId] = (acc[catId] || 0) + tx.amount;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const data = Object.entries(grouped).map(([catId, amount]) => {
+    const cat = getCategoryById(catId);
+    return {
+      name: cat?.name || "Без категории",
+      icon: cat?.icon || "📦",
+      value: amount,
+    };
+  }).sort((a, b) => b.value - a.value);
+
+  if (data.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+        Нет расходов в этом месяце
+      </div>
+    );
+  }
+
+  const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <PieChart>
+        <Pie
+          data={data}
+          cx="50%"
+          cy="50%"
+          innerRadius={50}
+          outerRadius={80}
+          paddingAngle={2}
+          dataKey="value"
+          label={({ name, percent }) => `${name} ${(percent ? percent * 100 : 0).toFixed(0)}%`}
+          labelLine={false}
+        >
+          {data.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip 
+          formatter={(value: any) => value != null ? `${Number(value).toLocaleString('ru-RU')} ₽` : '0 ₽'}
+          contentStyle={{ 
+            backgroundColor: "var(--card)", 
+            border: "1px solid var(--border)",
+            borderRadius: "8px",
+            color: "var(--foreground)"
+          }}
+        />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: lib\charts\MonthlyActivityChart.tsx
+─────────────────────────────────────────
+"use client";
+
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { ChartData } from "./registry";
+
+export function MonthlyActivityChart({ transactions }: ChartData) {
+  const months = 6;
+  const now = new Date();
+  
+  const data = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1).getTime();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1).getTime();
+    
+    const monthTx = transactions.filter(tx => tx.date >= monthStart && tx.date < monthEnd);
+    
+    const income = monthTx
+      .filter(tx => tx.type === "income")
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    
+    const expense = monthTx
+      .filter(tx => tx.type === "expense")
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    
+    data.push({
+      month: new Date(monthStart).toLocaleDateString('ru-RU', { month: 'short' }),
+      Доходы: income,
+      Расходы: expense,
+    });
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+        Недостаточно данных для графика
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey="month" stroke="var(--muted-foreground)" fontSize={12} />
+        <YAxis 
+          stroke="var(--muted-foreground)" 
+          fontSize={10}
+          tickFormatter={(value: any) => value != null ? `${(Number(value) / 1000).toFixed(0)}к` : '0'}
+        />
+        <Tooltip 
+          formatter={(value: any, name: any) => [
+            value != null ? `${Number(value).toLocaleString('ru-RU')} ₽` : '0 ₽',
+            name || 'Неизвестно'
+          ]}
+          contentStyle={{ 
+            backgroundColor: "var(--card)", 
+            border: "1px solid var(--border)",
+            borderRadius: "8px",
+            color: "var(--foreground)"
+          }}
+        />
+        <Legend />
+        <Bar dataKey="Доходы" fill="var(--accent)" radius={[8, 8, 0, 0]} />
+        <Bar dataKey="Расходы" fill="var(--destructive)" radius={[8, 8, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: lib\charts\registry.ts
+─────────────────────────────────────────
+import { Account, Debt, Transaction } from "@/db";
+
+// Тип данных, которые передаются в каждый график
+export interface ChartData {
+  accounts: Account[];
+  debts: Debt[];
+  transactions: Transaction[];
+}
+
+// Интерфейс, который должен реализовать каждый график
+export interface ChartDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  component: React.ComponentType<ChartData>;
+}
+
+// Реестр всех доступных графиков
+// Чтобы добавить новый график — просто добавь его сюда
+import { ExpensesByCategoryChart } from "@/lib/charts/ExpensesByCategoryChart";
+import { BalanceTrendChart } from "@/lib/charts/BalanceTrendChart";
+import { MonthlyActivityChart } from "@/lib/charts/MonthlyActivityChart";
+
+export const AVAILABLE_CHARTS: ChartDefinition[] = [
+  {
+    id: "expenses-by-category",
+    name: "Расходы по категориям",
+    description: "Круговая диаграмма: куда ушли деньги в этом месяце",
+    icon: "🥧",
+    component: ExpensesByCategoryChart,
+  },
+  {
+    id: "balance-trend",
+    name: "Динамика баланса",
+    description: "Как менялся ваш баланс за последние 30 дней",
+    icon: "📈",
+    component: BalanceTrendChart,
+  },
+  {
+    id: "monthly-activity",
+    name: "Активность по месяцам",
+    description: "Доходы vs расходы за последние 6 месяцев",
+    icon: "📊",
+    component: MonthlyActivityChart,
+  },
+];
+
+export function getChartById(id: string): ChartDefinition | undefined {
+  return AVAILABLE_CHARTS.find(c => c.id === id);
+}
+
+
 =============================================
-Обработано файлов: 20
+Обработано файлов: 28
 Пропущено файлов: 1
-Размер экспорта: 86150 байт
+Размер экспорта: 113248 байт
