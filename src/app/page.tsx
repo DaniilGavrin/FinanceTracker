@@ -74,7 +74,7 @@ export default function Home() {
 
       {/* Основной контент */}
       <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl">
-        {activeTab === "home" && <HomeView accounts={accounts} debts={debts} />}
+        {activeTab === "home" && <HomeView accounts={accounts} debts={debts} transactions={transactions} />}
         {activeTab === "accounts" && (
           <AccountsView 
             accounts={accounts} 
