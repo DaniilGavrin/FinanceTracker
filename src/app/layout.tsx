@@ -32,9 +32,7 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className={`${inter.className} antialiased`}>
-        <main className="min-h-screen flex flex-col">
-          {children}
-        </main>
+        {children}
       </body>
     </html>
   );

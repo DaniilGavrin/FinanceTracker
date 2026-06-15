@@ -8,7 +8,7 @@ export type BankType = 'sber' | 'tbank' | 'other' | 'person';
 export interface Account {
   id: string;
   name: string;
-  type: 'debit' | 'credit' | 'cash' | 'installment';
+  type: 'debit' | 'credit' | 'cash';
   balance: number;
   limit?: number;
   debtId?: string;
@@ -51,6 +51,7 @@ export interface Transaction {
   description?: string;
   date: number;
   createdAt: number;
+  updatedAt: number;
   synced: boolean;
 }
 
@@ -382,7 +383,7 @@ async function reverseTransactionEffects(tx: Transaction) {
 // ==========================================
 
 export async function createTransactionWithEffects(
-  txData: Omit<Transaction, 'id' | 'createdAt' | 'synced'>
+  txData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>
 ): Promise<string> {
   const txId = uuidv4();
   const now = Date.now();
@@ -391,12 +392,13 @@ export async function createTransactionWithEffects(
     ...txData,
     id: txId,
     createdAt: now,
+    updatedAt: now,
     synced: false,
   };
 
   await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
     await db.transactions.add(transaction);
-    await applyTransactionEffects(transaction); // Используем общую функцию
+    await applyTransactionEffects(transaction);
   });
 
   return txId;
@@ -468,23 +470,21 @@ export async function deleteDebt(id: string) {
   });
 }
 
-export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'synced'>>) {
+export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>) {
   const oldTx = await db.transactions.get(id);
   if (!oldTx) return;
 
   await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    // 1. Отменяем эффекты старой транзакции
     await reverseTransactionEffects(oldTx);
     
-    // 2. Обновляем саму транзакцию
     const updatedTx: Transaction = { 
       ...oldTx, 
       ...newData, 
+      updatedAt: Date.now(),
       synced: false 
     };
     await db.transactions.put(updatedTx);
     
-    // 3. Применяем эффекты новой транзакции
     await applyTransactionEffects(updatedTx);
   });
 }

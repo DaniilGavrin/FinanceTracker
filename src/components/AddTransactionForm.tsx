@@ -9,38 +9,53 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
   const [fromAccountId, setFromAccountId] = useState("");
   const [toAccountId, setToAccountId] = useState("");
   const [debtId, setDebtId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
+
+  const allAccounts = accounts || [];
+
+  // Валидация для перевода
+  const isTransferValid = type !== "transfer" || (fromAccountId && toAccountId && fromAccountId !== toAccountId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const parsedAmount = parseFloat(amount);
-    if (!parsedAmount || parsedAmount <= 0) return;
+    if (!parsedAmount || parsedAmount <= 0) {
+      alert("Сумма должна быть больше нуля");
+      return;
+    }
 
-    await createTransactionWithEffects({
-      type,
-      amount: parsedAmount,
-      description: description || undefined,
-      category: category || undefined,
-      fromAccountId: fromAccountId || undefined,
-      toAccountId: toAccountId || undefined,
-      debtId: debtId || undefined,
-      date: Date.now(),
-    });
+    if (type === "transfer" && fromAccountId === toAccountId) {
+      alert("Нельзя перевести деньги на тот же счёт");
+      return;
+    }
 
-    onClose();
+    setIsSubmitting(true);
+
+    try {
+      await createTransactionWithEffects({
+        type,
+        amount: parsedAmount,
+        description: description || undefined,
+        fromAccountId: fromAccountId || undefined,
+        toAccountId: toAccountId || undefined,
+        debtId: debtId || undefined,
+        date: Date.now(),
+      });
+      onClose();
+    } catch (error) {
+      console.error("Ошибка создания транзакции:", error);
+      alert("Не удалось сохранить операцию. Попробуйте ещё раз.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  // Фильтруем счета по типу
-  const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
-  const allAccounts = accounts || [];
-  const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -48,7 +63,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
         <h2 className="text-xl font-bold mb-4">Новая операция</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Тип операции */}
           <div>
             <label className="block text-sm font-medium mb-2">Тип операции</label>
             <div className="grid grid-cols-2 gap-2">
@@ -76,7 +90,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Сумма */}
           <div>
             <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
             <input
@@ -91,9 +104,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {/* Поля в зависимости от типа */}
-          
-          {/* РАСХОД: откуда */}
           {type === "expense" && (
             <div>
               <label className="block text-sm font-medium mb-1">Откуда списать</label>
@@ -116,7 +126,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* ДОХОД: куда */}
           {type === "income" && (
             <div>
               <label className="block text-sm font-medium mb-1">Куда зачислить</label>
@@ -136,7 +145,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* ПЕРЕВОД: откуда и куда */}
           {type === "transfer" && (
             <>
               <div>
@@ -170,11 +178,13 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
+                {fromAccountId && toAccountId && fromAccountId === toAccountId && (
+                  <p className="text-xs text-destructive mt-1">Нельзя выбрать один и тот же счёт</p>
+                )}
               </div>
             </>
           )}
 
-          {/* ГАШЕНИЕ ДОЛГА: какой долг + откуда (опционально) */}
           {type === "debt_payment" && (
             <>
               <div>
@@ -209,14 +219,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Если не выбран — долг уменьшится, но баланс счёта не изменится
-                </p>
               </div>
             </>
           )}
 
-          {/* ВЗЯТЬ В ДОЛГ: какой долг + куда (опционально) */}
           {type === "debt_borrow" && (
             <>
               <div>
@@ -234,9 +240,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Или создайте новый долг в разделе «Обязательства»
-                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -254,14 +257,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Например, взял у друга 5000₽ и сразу положил на карту
-                </p>
               </div>
             </>
           )}
 
-          {/* Описание */}
           <div>
             <label className="block text-sm font-medium mb-1">Комментарий</label>
             <input
@@ -273,20 +272,21 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {/* Кнопки */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
+              disabled={isSubmitting}
               className="btn-secondary flex-1"
             >
               Отмена
             </button>
             <button
               type="submit"
-              className="btn-primary flex-1"
+              disabled={isSubmitting || !isTransferValid}
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Добавить
+              {isSubmitting ? "Сохранение..." : "Добавить"}
             </button>
           </div>
         </form>

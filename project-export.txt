@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 15.06.2026 16:39:54
+Дата: 15.06.2026 18:01:38
 Структура: src/
 
 =============================================
@@ -89,6 +89,10 @@ body {
   scrollbar-color: var(--muted) transparent;
 }
 
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
 
 ─────────────────────────────────────────
 FILE: app\layout.tsx
@@ -143,210 +147,113 @@ FILE: app\page.tsx
 
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/db";
+import { db, deleteAccount, deleteDebt, deleteTransaction } from "@/db";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+
 import { AddAccountForm } from "@/components/AddAccountForm";
 import { AddDebtForm } from "@/components/AddDebtForm";
 import { AddTransactionForm } from "@/components/AddTransactionForm";
 import { FAQModal } from "@/components/FAQModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { BottomNav } from "@/components/layout/BottomNav";
+
+import { HomeView } from "@/components/views/HomeView";
+import { AccountsView } from "@/components/views/AccountsView";
+import { TransactionsView } from "@/components/views/TransactionsView";
+import { SettingsView } from "@/components/views/SettingsView";
+
+type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const [activeTab, setActiveTab] = useState<Tab>("home");
+  
+  // Модалки
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddDebt, setShowAddDebt] = useState(false);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'account' | 'debt' | 'transaction'; id: string; name: string } | null>(null);
 
+  // Данные (для операций берем все, без limit)
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
-  const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().limit(5).toArray(), []);
+  const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().toArray(), []);
 
-  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
-  const totalBalance = accounts?.reduce((sum, a) => sum + a.balance, 0) || 0;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      if (deleteTarget.type === 'account') await deleteAccount(deleteTarget.id);
+      if (deleteTarget.type === 'debt') await deleteDebt(deleteTarget.id);
+      if (deleteTarget.type === 'transaction') await deleteTransaction(deleteTarget.id);
+    } catch (error) {
+      console.error('Ошибка удаления:', error);
+    }
+    setDeleteTarget(null);
+  };
+
+  const handleDeleteRequest = (type: 'account' | 'debt' | 'transaction', id: string, name: string) => {
+    setDeleteTarget({ type, id, name });
+  };
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-2xl">
-      {/* Шапка */}
-      <header className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Finance Tracker</h1>
-        <div className="flex items-center gap-3">
-          <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
-              isOnline
-                ? "bg-green-500/10 text-green-400 border-green-500/20"
-                : "bg-red-500/10 text-red-400 border-red-500/20"
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full animate-pulse ${
-                isOnline ? "bg-green-400" : "bg-red-400"
-              }`}
-            ></span>
-            {isOnline ? "В сети" : "Оффлайн"}
+    <div className="min-h-screen flex flex-col bg-background">
+      {/* Глобальная шапка */}
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <h1 className="text-xl font-bold tracking-tight">Finance Tracker</h1>
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${isOnline ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isOnline ? "bg-green-400" : "bg-red-400"}`}></span>
+              {isOnline ? "В сети" : "Оффлайн"}
+            </div>
+            <button onClick={() => setShowFAQ(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors" title="Помощь">
+              <span className="text-sm font-bold">?</span>
+            </button>
+            <button onClick={() => setShowAddTransaction(true)} className="btn-primary px-3 py-1.5 text-xs font-semibold">+ Операция</button>
           </div>
-          <button
-            onClick={() => setShowFAQ(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors"
-            title="Помощь"
-          >
-            <span className="text-sm font-bold">?</span>
-          </button>
-          <button
-            onClick={() => setShowAddTransaction(true)}
-            className="btn-primary px-3 py-1 text-sm"
-          >
-            + Операция
-          </button>
         </div>
       </header>
 
-      {/* Быстрая статистика */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="card">
-          <p className="text-sm text-muted-foreground">Общий долг</p>
-          <p className="text-2xl font-bold text-destructive mt-1">
-            ₽ {totalDebt.toLocaleString('ru-RU')}
-          </p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-muted-foreground">Свободные средства</p>
-          <p className="text-2xl font-bold text-accent mt-1">
-            ₽ {totalBalance.toLocaleString('ru-RU')}
-          </p>
-        </div>
-      </div>
+      {/* Основной контент */}
+      <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl">
+        {activeTab === "home" && <HomeView accounts={accounts} debts={debts} />}
+        {activeTab === "accounts" && (
+          <AccountsView 
+            accounts={accounts} 
+            debts={debts} 
+            onAddAccount={() => setShowAddAccount(true)} 
+            onAddDebt={() => setShowAddDebt(true)}
+            onDelete={handleDeleteRequest}
+          />
+        )}
+        {activeTab === "transactions" && (
+          <TransactionsView 
+            transactions={transactions} 
+            accounts={accounts} 
+            debts={debts} 
+            onDelete={(id, name) => handleDeleteRequest('transaction', id, name)} 
+          />
+        )}
+        {activeTab === "settings" && <SettingsView />}
+      </main>
 
-      {/* Список счетов */}
-      <section className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Счета ({accounts?.length || 0})</h2>
-          <button
-            onClick={() => setShowAddAccount(true)}
-            className="text-sm text-primary hover:underline"
-          >
-            + Добавить
-          </button>
-        </div>
-        <div className="space-y-3">
-          {accounts && accounts.length > 0 ? (
-            accounts.map((acc) => (
-              <div key={acc.id} className="card flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{acc.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {acc.type === 'debit' ? 'Дебетовая' : acc.type === 'credit' ? 'Кредитная' : acc.type === 'cash' ? 'Наличные' : acc.type}
-                  </p>
-                </div>
-                <p className="font-mono text-lg">₽ {acc.balance.toLocaleString('ru-RU')}</p>
-              </div>
-            ))
-          ) : (
-            <p className="text-muted-foreground text-sm text-center py-4">Нет счетов. Добавь первый!</p>
-          )}
-        </div>
-      </section>
+      {/* Нижняя навигация */}
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Список долгов */}
-      <section className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Обязательства ({debts?.length || 0})</h2>
-          <button
-            onClick={() => setShowAddDebt(true)}
-            className="text-sm text-primary hover:underline"
-          >
-            + Добавить
-          </button>
-        </div>
-        <div className="space-y-3">
-          {debts && debts.length > 0 ? (
-            debts.map((debt) => (
-              <div key={debt.id} className="card flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{debt.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : 'Рассрочка'}
-                  </p>
-                </div>
-                <p className="font-mono text-lg text-destructive">
-                  - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
-                </p>
-              </div>
-            ))
-          ) : (
-            <p className="text-muted-foreground text-sm text-center py-4">Долгов нет. Так держать!</p>
-          )}
-        </div>
-      </section>
-
-      {/* Последние транзакции */}
-      <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-3">Последние операции</h2>
-        <div className="space-y-3">
-          {transactions && transactions.length > 0 ? (
-            transactions.map((tx) => {
-              // Находим связанные счета и долги
-              const fromAcc = accounts?.find(a => a.id === tx.fromAccountId);
-              const toAcc = accounts?.find(a => a.id === tx.toAccountId);
-              const debt = debts?.find(d => d.id === tx.debtId);
-
-              let title = tx.description || 'Без описания';
-              let subtitle = '';
-              let amountPrefix = '';
-              let amountColor = '';
-
-              switch (tx.type) {
-                case 'expense':
-                  amountPrefix = '-';
-                  amountColor = 'text-destructive';
-                  subtitle = fromAcc ? `с ${fromAcc.name}` : 'Расход';
-                  break;
-                case 'income':
-                  amountPrefix = '+';
-                  amountColor = 'text-accent';
-                  subtitle = toAcc ? `на ${toAcc.name}` : 'Доход';
-                  break;
-                case 'transfer':
-                  amountPrefix = '↔';
-                  amountColor = 'text-primary';
-                  subtitle = fromAcc && toAcc ? `${fromAcc.name} → ${toAcc.name}` : 'Перевод';
-                  break;
-                case 'debt_payment':
-                  amountPrefix = '-';
-                  amountColor = 'text-accent';
-                  subtitle = debt ? `гашение: ${debt.name}` : 'Платёж по долгу';
-                  break;
-                case 'debt_borrow':
-                  amountPrefix = '+';
-                  amountColor = 'text-destructive';
-                  subtitle = debt ? `заём: ${debt.name}` : 'Новый долг';
-                  break;
-              }
-
-              return (
-                <div key={tx.id} className="card flex justify-between items-center">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{title}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {subtitle} • {new Date(tx.date).toLocaleDateString('ru-RU')}
-                    </p>
-                  </div>
-                  <p className={`font-mono text-lg ml-4 ${amountColor}`}>
-                    {amountPrefix} {tx.amount.toLocaleString('ru-RU')} ₽
-                  </p>
-                </div>
-              );
-            })
-          ) : (
-            <p className="text-muted-foreground text-sm text-center py-4">Операций пока нет</p>
-          )}
-        </div>
-      </section>
-
-      {/* Модальные окна */}
+      {/* Глобальные модалки */}
       {showAddAccount && <AddAccountForm onClose={() => setShowAddAccount(false)} />}
       {showAddDebt && <AddDebtForm onClose={() => setShowAddDebt(false)} />}
       {showAddTransaction && <AddTransactionForm onClose={() => setShowAddTransaction(false)} />}
       {showFAQ && <FAQModal onClose={() => setShowFAQ(false)} />}
+      {deleteTarget && (
+        <ConfirmDialog 
+          title="Удалить запись?" 
+          message={`Вы уверены, что хотите удалить "${deleteTarget.name}"? Это действие нельзя отменить.`} 
+          onConfirm={handleDelete} 
+          onCancel={() => setDeleteTarget(null)} 
+        />
+      )}
     </div>
   );
 }
@@ -358,28 +265,44 @@ FILE: components\AddAccountForm.tsx
 "use client";
 
 import { useState } from "react";
-import { createAccount } from "@/db";
+import { createAccount, createCreditCard, BankType } from "@/db";
 
 export function AddAccountForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<"debit" | "cash">("debit");
+  const [type, setType] = useState<"debit" | "cash" | "credit">("debit");
   const [balance, setBalance] = useState("");
+  const [limit, setLimit] = useState("");
+  const [bank, setBank] = useState<BankType>("sber");
+  const [openedAt, setOpenedAt] = useState(new Date().toISOString().split('T')[0]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    await createAccount({
-      name,
-      type,
-      balance: parseFloat(balance) || 0,
-    });
+    if (type === "credit") {
+      // Создаём кредитку + долг автоматически
+      await createCreditCard({
+        name,
+        limit: parseFloat(limit) || 0,
+        bank,
+        openedAt: new Date(openedAt).getTime(),
+      });
+    } else {
+      // Обычный счёт
+      await createAccount({
+        name,
+        type,
+        balance: parseFloat(balance) || 0,
+        bank: type === "debit" ? bank : undefined,
+        openedAt: new Date(openedAt).getTime(),
+      });
+    }
 
     onClose();
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="card max-w-md w-full">
+      <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
         <h2 className="text-xl font-bold mb-4">Добавить счёт</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -389,7 +312,7 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Кошелёк"
+              placeholder="Например: Т-Банк Черная"
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               required
             />
@@ -399,26 +322,75 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
             <label className="block text-sm font-medium mb-1">Тип</label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as "debit" | "cash")}
+              onChange={(e) => setType(e.target.value as any)}
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="debit">Дебетовая карта</option>
               <option value="cash">Наличные</option>
+              <option value="credit">Кредитная карта</option>
             </select>
           </div>
 
+          {/* Банк (для всех типов) */}
           <div>
-            <label className="block text-sm font-medium mb-1">Баланс</label>
+            <label className="block text-sm font-medium mb-1">Банк</label>
+            <select
+              value={bank}
+              onChange={(e) => setBank(e.target.value as BankType)}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="sber">Сбер</option>
+              <option value="tbank">Т-Банк</option>
+              <option value="other">Другой</option>
+            </select>
+          </div>
+
+          {/* Дата открытия */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Дата открытия</label>
             <input
-              type="number"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              placeholder="0"
-              step="0.01"
+              type="date"
+              value={openedAt}
+              onChange={(e) => setOpenedAt(e.target.value)}
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               required
             />
           </div>
+
+          {/* Баланс (для дебетовых и наличных) */}
+          {type !== "credit" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Баланс (₽)</label>
+              <input
+                type="number"
+                value={balance}
+                onChange={(e) => setBalance(e.target.value)}
+                placeholder="0"
+                step="0.01"
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                required
+              />
+            </div>
+          )}
+
+          {/* Лимит (для кредиток) */}
+          {type === "credit" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Кредитный лимит (₽)</label>
+              <input
+                type="number"
+                value={limit}
+                onChange={(e) => setLimit(e.target.value)}
+                placeholder="60000"
+                step="0.01"
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                required
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Долг создастся автоматически с нулевым балансом
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-2">
             <button
@@ -448,7 +420,7 @@ FILE: components\AddDebtForm.tsx
 "use client";
 
 import { useState } from "react";
-import { createDebt } from "@/db";
+import { createDebt, BankType } from "@/db";
 
 export function AddDebtForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
@@ -456,6 +428,9 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
   const [totalAmount, setTotalAmount] = useState("");
   const [currentAmount, setCurrentAmount] = useState("");
   const [interestRate, setInterestRate] = useState("");
+  const [bank, setBank] = useState<BankType>("sber");
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [termMonths, setTermMonths] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -469,6 +444,9 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
       totalAmount: total,
       currentAmount: current,
       interestRate: interestRate ? parseFloat(interestRate) : undefined,
+      bank: type !== "person" ? bank : "person",
+      startDate: new Date(startDate).getTime(),
+      termMonths: termMonths ? parseInt(termMonths) : undefined,
     });
 
     onClose();
@@ -476,7 +454,7 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
         <h2 className="text-xl font-bold mb-4">Добавить долг</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -486,7 +464,7 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Кредит Сбер"
+              placeholder="Например: Потребительский кредит"
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               required
             />
@@ -504,6 +482,48 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
               <option value="installment">Рассрочка</option>
             </select>
           </div>
+
+          {/* Банк (не для физлиц) */}
+          {type !== "person" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Банк</label>
+              <select
+                value={bank}
+                onChange={(e) => setBank(e.target.value as BankType)}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="sber">Сбер</option>
+                <option value="tbank">Т-Банк</option>
+                <option value="other">Другой</option>
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Дата взятия</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          {/* Срок (для кредитов) */}
+          {type === "bank_loan" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Срок (месяцев)</label>
+              <input
+                type="number"
+                value={termMonths}
+                onChange={(e) => setTermMonths(e.target.value)}
+                placeholder="24"
+                min="1"
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">
@@ -535,7 +555,7 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Если вы только взяли долг — оставьте пустым, система сама подставит общую сумму.
+              Если вы только взяли долг — оставьте пустым.
             </p>
           </div>
 
@@ -548,13 +568,10 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
               type="number"
               value={interestRate}
               onChange={(e) => setInterestRate(e.target.value)}
-              placeholder="Например: 19.9"
+              placeholder="19.9"
               step="0.1"
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              Для рассрочек обычно 0%. Для кредитов — смотрите в договоре.
-            </p>
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -881,6 +898,47 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
 
 
 ─────────────────────────────────────────
+FILE: components\ConfirmDialog.tsx
+─────────────────────────────────────────
+"use client";
+
+export function ConfirmDialog({ 
+  title, 
+  message, 
+  onConfirm, 
+  onCancel 
+}: { 
+  title: string; 
+  message: string; 
+  onConfirm: () => void; 
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="card max-w-sm w-full">
+        <h3 className="text-lg font-bold mb-2">{title}</h3>
+        <p className="text-sm text-muted-foreground mb-6">{message}</p>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="btn-secondary flex-1"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={onConfirm}
+            className="btn-primary flex-1 bg-destructive hover:opacity-90"
+          >
+            Удалить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
 FILE: components\FAQModal.tsx
 ─────────────────────────────────────────
 "use client";
@@ -1022,10 +1080,475 @@ export function FAQModal({ onClose }: { onClose: () => void }) {
 
 
 ─────────────────────────────────────────
+FILE: components\dashboard\StatsCards.tsx
+─────────────────────────────────────────
+interface Props {
+  totalBalance: number;
+  totalCreditLimit: number;
+  totalDebt: number;
+}
+
+export function StatsCards({ totalBalance, totalCreditLimit, totalDebt }: Props) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="card">
+        <p className="text-sm text-muted-foreground">Свободные средства</p>
+        <p className="text-2xl font-bold text-accent mt-1">₽ {totalBalance.toLocaleString('ru-RU')}</p>
+        <p className="text-xs text-muted-foreground mt-1">Дебетовые карты и наличные</p>
+      </div>
+      <div className="card">
+        <p className="text-sm text-muted-foreground">Доступный лимит</p>
+        <p className="text-2xl font-bold text-primary mt-1">₽ {totalCreditLimit.toLocaleString('ru-RU')}</p>
+        <p className="text-xs text-muted-foreground mt-1">Кредитные карты (деньги банка)</p>
+      </div>
+      <div className="card">
+        <p className="text-sm text-muted-foreground">Общий долг</p>
+        <p className="text-2xl font-bold text-destructive mt-1">₽ {totalDebt.toLocaleString('ru-RU')}</p>
+        <p className="text-xs text-muted-foreground mt-1">Все обязательства</p>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\layout\BottomNav.tsx
+─────────────────────────────────────────
+"use client";
+
+import { JSX } from "react/jsx-runtime";
+
+type Tab = "home" | "accounts" | "transactions" | "settings";
+
+interface Props {
+  activeTab: Tab;
+  onTabChange: (tab: Tab) => void;
+}
+
+export function BottomNav({ activeTab, onTabChange }: Props) {
+  const tabs: { id: Tab; label: string; icon: JSX.Element }[] = [
+    {
+      id: "home",
+      label: "Главная",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      ),
+    },
+    {
+      id: "accounts",
+      label: "Счета",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+      ),
+    },
+    {
+      id: "transactions",
+      label: "Операции",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+      ),
+    },
+    {
+      id: "settings",
+      label: "Настройки",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      ),
+    },
+  ];
+
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border pb-safe z-40">
+      <div className="flex justify-around items-center h-16 max-w-2xl mx-auto">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => onTabChange(tab.id)}
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${
+                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.icon}
+              <span className="text-[10px] font-medium">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\lists\AccountItem.tsx
+─────────────────────────────────────────
+import { Account } from "@/db";
+
+interface Props {
+  account: Account;
+  onDelete: (id: string, name: string) => void;
+}
+
+export function AccountItem({ account, onDelete }: Props) {
+  const bankLabel = account.bank === 'sber' ? 'Сбер' : account.bank === 'tbank' ? 'Т-Банк' : account.bank === 'other' ? 'Другой' : '';
+  const dateLabel = account.openedAt ? new Date(account.openedAt).toLocaleDateString('ru-RU') : '';
+
+  return (
+    <div className="card flex justify-between items-center group">
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate">{account.name}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {account.type === 'debit' ? 'Дебетовая' : account.type === 'credit' ? 'Кредитная' : account.type === 'cash' ? 'Наличные' : account.type}
+          {bankLabel && ` • ${bankLabel}`}
+          {dateLabel && ` • ${dateLabel}`}
+        </p>
+      </div>
+      <div className="flex items-center gap-3">
+        <p className="font-mono text-lg">₽ {account.balance.toLocaleString('ru-RU')}</p>
+        <button
+          onClick={() => onDelete(account.id, account.name)}
+          className="text-destructive hover:text-destructive/80 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+          title="Удалить"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\lists\DebtItem.tsx
+─────────────────────────────────────────
+import { Debt } from "@/db";
+
+interface Props {
+  debt: Debt;
+  onDelete: (id: string, name: string) => void;
+}
+
+export function DebtItem({ debt, onDelete }: Props) {
+  const bankLabel = debt.bank === 'sber' ? 'Сбер' : debt.bank === 'tbank' ? 'Т-Банк' : debt.bank === 'person' ? 'Физлицо' : debt.bank === 'other' ? 'Другой' : '';
+  const dateLabel = debt.startDate ? new Date(debt.startDate).toLocaleDateString('ru-RU') : '';
+
+  return (
+    <div className="card flex justify-between items-center group">
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate">{debt.name}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : debt.type === 'installment' ? 'Рассрочка' : 'Кредитка'}
+          {bankLabel && ` • ${bankLabel}`}
+          {dateLabel && ` • ${dateLabel}`}
+        </p>
+      </div>
+      <div className="flex items-center gap-3">
+        <p className="font-mono text-lg text-destructive">
+          - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
+        </p>
+        <button
+          onClick={() => onDelete(debt.id, debt.name)}
+          className="text-destructive hover:text-destructive/80 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+          title="Удалить"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\lists\TransactionItem.tsx
+─────────────────────────────────────────
+import { Transaction, Account, Debt } from "@/db";
+
+interface Props {
+  tx: Transaction;
+  accounts: Account[] | undefined;
+  debts: Debt[] | undefined;
+  onDelete: (id: string, name: string) => void;
+}
+
+export function TransactionItem({ tx, accounts, debts, onDelete }: Props) {
+  const fromAcc = accounts?.find(a => a.id === tx.fromAccountId);
+  const toAcc = accounts?.find(a => a.id === tx.toAccountId);
+  const debt = debts?.find(d => d.id === tx.debtId);
+
+  let title = tx.description || 'Без описания';
+  let subtitle = '';
+  let amountPrefix = '';
+  let amountColor = '';
+
+  switch (tx.type) {
+    case 'expense':
+      amountPrefix = '-'; amountColor = 'text-destructive';
+      subtitle = fromAcc ? `с ${fromAcc.name}` : 'Расход';
+      break;
+    case 'income':
+      amountPrefix = '+'; amountColor = 'text-accent';
+      subtitle = toAcc ? `на ${toAcc.name}` : 'Доход';
+      break;
+    case 'transfer':
+      amountPrefix = '↔'; amountColor = 'text-primary';
+      subtitle = fromAcc && toAcc ? `${fromAcc.name} → ${toAcc.name}` : 'Перевод';
+      break;
+    case 'debt_payment':
+      amountPrefix = '-'; amountColor = 'text-accent';
+      subtitle = debt ? `гашение: ${debt.name}` : 'Платёж по долгу';
+      break;
+    case 'debt_borrow':
+      amountPrefix = '+'; amountColor = 'text-destructive';
+      subtitle = debt ? `заём: ${debt.name}` : 'Новый долг';
+      break;
+  }
+
+  return (
+    <div className="card flex justify-between items-center group">
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate">{title}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {subtitle} • {new Date(tx.date).toLocaleDateString('ru-RU')}
+        </p>
+      </div>
+      <div className="flex items-center gap-3">
+        <p className={`font-mono text-lg ${amountColor}`}>
+          {amountPrefix} {tx.amount.toLocaleString('ru-RU')} ₽
+        </p>
+        <button
+          onClick={() => onDelete(tx.id, title)}
+          className="text-destructive hover:text-destructive/80 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+          title="Удалить"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\views\AccountsView.tsx
+─────────────────────────────────────────
+"use client";
+import { useState } from "react";
+import { Account, Debt } from "@/db";
+import { AccountItem } from "@/components/lists/AccountItem";
+import { DebtItem } from "@/components/lists/DebtItem";
+
+interface Props {
+  accounts: Account[] | undefined;
+  debts: Debt[] | undefined;
+  onAddAccount: () => void;
+  onAddDebt: () => void;
+  onDelete: (type: 'account' | 'debt', id: string, name: string) => void;
+}
+
+export function AccountsView({ accounts, debts, onAddAccount, onAddDebt, onDelete }: Props) {
+  return (
+    <div className="space-y-6 pb-20">
+      {/* Счета */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Счета ({accounts?.length || 0})</h2>
+          <button onClick={onAddAccount} className="text-sm text-primary hover:underline">+ Добавить</button>
+        </div>
+        <div className="space-y-3">
+          {accounts && accounts.length > 0 ? (
+            accounts.map(acc => <AccountItem key={acc.id} account={acc} onDelete={(id, name) => onDelete('account', id, name)} />)
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4 card">Нет счетов. Добавь первый!</p>
+          )}
+        </div>
+      </section>
+
+      {/* Долги */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Обязательства ({debts?.length || 0})</h2>
+          <button onClick={onAddDebt} className="text-sm text-primary hover:underline">+ Добавить</button>
+        </div>
+        <div className="space-y-3">
+          {debts && debts.length > 0 ? (
+            debts.map(debt => <DebtItem key={debt.id} debt={debt} onDelete={(id, name) => onDelete('debt', id, name)} />)
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4 card">Долгов нет. Так держать!</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\views\HomeView.tsx
+─────────────────────────────────────────
+"use client";
+import { Account, Debt } from "@/db";
+import { StatsCards } from "@/components/dashboard/StatsCards";
+
+interface Props {
+  accounts: Account[] | undefined;
+  debts: Debt[] | undefined;
+}
+
+export function HomeView({ accounts, debts }: Props) {
+  const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
+  const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
+  const totalBalance = debitAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const totalCreditLimit = creditAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
+
+  return (
+    <div className="space-y-6">
+      <StatsCards totalBalance={totalBalance} totalCreditLimit={totalCreditLimit} totalDebt={totalDebt} />
+      <div className="card p-6 text-center text-muted-foreground">
+        <p className="font-medium mb-2">📊 Графики и аналитика</p>
+        <p className="text-sm">Здесь скоро появятся круговые диаграммы расходов и тренды баланса.</p>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\views\SettingsView.tsx
+─────────────────────────────────────────
+"use client";
+import { useState, useEffect } from "react";
+import { db } from "@/db";
+
+export function SettingsView() {
+  const [storageInfo, setStorageInfo] = useState<{ usage: string; quota: string } | null>(null);
+
+  useEffect(() => {
+    if ('storage' in navigator && 'estimate' in navigator.storage) {
+      navigator.storage.estimate().then(estimate => {
+        const usage = estimate.usage ? (estimate.usage / 1024 / 1024).toFixed(2) + ' МБ' : '0 МБ';
+        const quota = estimate.quota ? (estimate.quota / 1024 / 1024).toFixed(2) + ' МБ' : 'Неизвестно';
+        setStorageInfo({ usage, quota });
+      });
+    }
+  }, []);
+
+  const handleClearAllData = async () => {
+    if (confirm("ВНИМАНИЕ: Это удалит ВСЕ счета, долги и операции безвозвратно. Продолжить?")) {
+      await db.delete();
+      window.location.reload();
+    }
+  };
+
+  const handleClearCache = async () => {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+      alert("Кэш приложения очищен. Перезагрузите страницу.");
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="space-y-4 pb-20">
+      <div className="card">
+        <h3 className="font-semibold mb-3">Хранилище</h3>
+        {storageInfo ? (
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>Использовано: <span className="text-foreground font-mono">{storageInfo.usage}</span></p>
+            <p>Доступно: <span className="text-foreground font-mono">{storageInfo.quota}</span></p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Загрузка информации...</p>
+        )}
+      </div>
+
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Управление приложением</h3>
+        
+        <button className="w-full text-left px-4 py-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors text-sm font-medium">
+          🔄 Принудительная синхронизация (Скоро)
+        </button>
+        
+        <button 
+          onClick={handleClearCache}
+          className="w-full text-left px-4 py-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors text-sm font-medium text-yellow-500"
+        >
+          🧹 Очистить кэш и пересобрать PWA
+        </button>
+
+        <button 
+          onClick={handleClearAllData}
+          className="w-full text-left px-4 py-3 rounded-lg bg-destructive/10 hover:bg-destructive/20 transition-colors text-sm font-medium text-destructive"
+        >
+          🗑️ Полная очистка всех данных
+        </button>
+      </div>
+
+      <div className="text-center text-xs text-muted-foreground pt-8">
+        <p>Finance Tracker v0.1.0</p>
+        <p>ByteWizard © 2026</p>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\views\TransactionsView.tsx
+─────────────────────────────────────────
+"use client";
+import { Transaction, Account, Debt } from "@/db";
+import { TransactionItem } from "@/components/lists/TransactionItem";
+
+interface Props {
+  transactions: Transaction[] | undefined;
+  accounts: Account[] | undefined;
+  debts: Debt[] | undefined;
+  onDelete: (id: string, name: string) => void;
+}
+
+export function TransactionsView({ transactions, accounts, debts, onDelete }: Props) {
+  return (
+    <div className="space-y-3 pb-20">
+      {transactions && transactions.length > 0 ? (
+        transactions.map(tx => (
+          <TransactionItem 
+            key={tx.id} 
+            tx={tx} 
+            accounts={accounts} 
+            debts={debts} 
+            onDelete={onDelete} 
+          />
+        ))
+      ) : (
+        <p className="text-muted-foreground text-sm text-center py-8 card">Операций пока нет</p>
+      )}
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
 FILE: db\index.ts
 ─────────────────────────────────────────
 import Dexie, { type EntityTable } from 'dexie';
 import { v4 as uuidv4 } from 'uuid';
+
+// Типы банков
+export type BankType = 'sber' | 'tbank' | 'other' | 'person';
 
 // 1. Типы данных
 export interface Account {
@@ -1034,7 +1557,9 @@ export interface Account {
   type: 'debit' | 'credit' | 'cash' | 'installment';
   balance: number;
   limit?: number;
-  debtId?: string; // Связь с долгом (для кредиток)
+  debtId?: string;
+  bank?: BankType;
+  openedAt?: number;
   updatedAt: number;
   synced: boolean;
 }
@@ -1042,11 +1567,14 @@ export interface Account {
 export interface Debt {
   id: string;
   name: string;
-  type: 'bank_loan' | 'person' | 'installment';
+  type: 'bank_loan' | 'person' | 'installment' | 'credit_card';
   totalAmount: number;
   currentAmount: number;
   interestRate?: number;
-  linkedAccountId?: string; // Связь со счётом (для кредиток)
+  linkedAccountId?: string;
+  bank?: BankType;
+  startDate?: number;
+  termMonths?: number;
   updatedAt: number;
   synced: boolean;
 }
@@ -1062,9 +1590,9 @@ export interface Transaction {
   id: string;
   type: TransactionType;
   amount: number;
-  fromAccountId?: string;  // Откуда (expense, transfer, debt_payment)
-  toAccountId?: string;    // Куда (income, transfer, debt_borrow)
-  debtId?: string;         // Какой долг (debt_payment, debt_borrow)
+  fromAccountId?: string;
+  toAccountId?: string;
+  debtId?: string;
   category?: string;
   description?: string;
   date: number;
@@ -1081,14 +1609,20 @@ export class FinanceDB extends Dexie {
   constructor() {
     super('FinanceTrackerDB');
     
-    this.version(2).stores({
-      accounts: 'id, type, synced, updatedAt, debtId',
-      debts: 'id, type, synced, updatedAt, linkedAccountId',
+    this.version(3).stores({
+      accounts: 'id, type, synced, updatedAt, debtId, bank',
+      debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
       transactions: 'id, fromAccountId, toAccountId, debtId, date, type, synced, createdAt'
     }).upgrade(tx => {
-      // Миграция с v1 на v2 — добавляем новые поля
       return tx.table('accounts').toCollection().modify(acc => {
-        acc.debtId = acc.debtId || undefined;
+        acc.bank = acc.bank || undefined;
+        acc.openedAt = acc.openedAt || undefined;
+      }).then(() => {
+        return tx.table('debts').toCollection().modify(debt => {
+          debt.bank = debt.bank || undefined;
+          debt.startDate = debt.startDate || undefined;
+          debt.termMonths = debt.termMonths || undefined;
+        });
       });
     });
   }
@@ -1096,7 +1630,10 @@ export class FinanceDB extends Dexie {
 
 export const db = new FinanceDB();
 
-// 3. Простые функции создания (для счетов и долгов)
+// ==========================================
+// БАЗОВЫЕ ФУНКЦИИ СОЗДАНИЯ
+// ==========================================
+
 export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>) {
   return db.accounts.add({
     ...data,
@@ -1115,7 +1652,281 @@ export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
   });
 }
 
-// 4. ГЛАВНАЯ ФУНКЦИЯ — создание транзакции с эффектами
+export async function createCreditCard(params: {
+  name: string;
+  limit: number;
+  bank: BankType;
+  openedAt: number;
+}): Promise<{ accountId: string; debtId: string }> {
+  const accountId = uuidv4();
+  const debtId = uuidv4();
+  const now = Date.now();
+
+  await db.transaction('rw', db.accounts, db.debts, async () => {
+    await db.debts.add({
+      id: debtId,
+      name: params.name,
+      type: 'credit_card',
+      totalAmount: 0,
+      currentAmount: 0,
+      linkedAccountId: accountId,
+      bank: params.bank,
+      startDate: params.openedAt,
+      updatedAt: now,
+      synced: false,
+    });
+
+    await db.accounts.add({
+      id: accountId,
+      name: params.name,
+      type: 'credit',
+      balance: params.limit,
+      limit: params.limit,
+      debtId: debtId,
+      bank: params.bank,
+      openedAt: params.openedAt,
+      updatedAt: now,
+      synced: false,
+    });
+  });
+
+  return { accountId, debtId };
+}
+
+// ==========================================
+// ПРИМЕНЕНИЕ И ОТМЕНА ЭФФЕКТОВ (ОДНА ФУНКЦИЯ ДЛЯ ВСЕХ)
+// ==========================================
+
+// Применяет эффекты транзакции к балансам
+async function applyTransactionEffects(tx: Transaction) {
+  const now = Date.now();
+  
+  switch (tx.type) {
+    case 'expense': {
+      if (tx.fromAccountId) {
+        const acc = await db.accounts.get(tx.fromAccountId);
+        if (acc) {
+          acc.balance -= tx.amount;
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+          
+          if (acc.type === 'credit' && acc.debtId) {
+            const debt = await db.debts.get(acc.debtId);
+            if (debt) {
+              debt.currentAmount += tx.amount;
+              debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
+              debt.updatedAt = now;
+              await db.debts.put(debt);
+            }
+          }
+        }
+      }
+      break;
+    }
+    case 'income': {
+      if (tx.toAccountId) {
+        const acc = await db.accounts.get(tx.toAccountId);
+        if (acc) {
+          acc.balance += tx.amount;
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+        }
+      }
+      break;
+    }
+    case 'transfer': {
+      if (tx.fromAccountId && tx.toAccountId) {
+        const fromAcc = await db.accounts.get(tx.fromAccountId);
+        const toAcc = await db.accounts.get(tx.toAccountId);
+        
+        if (fromAcc && toAcc) {
+          fromAcc.balance -= tx.amount;
+          fromAcc.updatedAt = now;
+          await db.accounts.put(fromAcc);
+          
+          toAcc.balance += tx.amount;
+          toAcc.updatedAt = now;
+          await db.accounts.put(toAcc);
+        }
+      }
+      break;
+    }
+    case 'debt_payment': {
+      if (tx.debtId) {
+        const debt = await db.debts.get(tx.debtId);
+        if (debt) {
+          debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
+          debt.updatedAt = now;
+          await db.debts.put(debt);
+          
+          if (debt.linkedAccountId) {
+            const acc = await db.accounts.get(debt.linkedAccountId);
+            if (acc) {
+              acc.balance = Math.min(acc.limit || 0, acc.balance + tx.amount);
+              acc.updatedAt = now;
+              await db.accounts.put(acc);
+            }
+          }
+        }
+      }
+      if (tx.fromAccountId) {
+        const acc = await db.accounts.get(tx.fromAccountId);
+        if (acc) {
+          acc.balance -= tx.amount;
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+        }
+      }
+      break;
+    }
+    case 'debt_borrow': {
+      if (tx.debtId) {
+        const debt = await db.debts.get(tx.debtId);
+        if (debt) {
+          debt.currentAmount += tx.amount;
+          debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
+          debt.updatedAt = now;
+          await db.debts.put(debt);
+          
+          if (debt.linkedAccountId) {
+            const acc = await db.accounts.get(debt.linkedAccountId);
+            if (acc) {
+              acc.balance = Math.max(-(acc.limit || 0), acc.balance - tx.amount);
+              acc.updatedAt = now;
+              await db.accounts.put(acc);
+            }
+          }
+        }
+      }
+      if (tx.toAccountId) {
+        const acc = await db.accounts.get(tx.toAccountId);
+        if (acc) {
+          acc.balance += tx.amount;
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+        }
+      }
+      break;
+    }
+  }
+}
+
+// Отменяет эффекты транзакции (обратная операция)
+async function reverseTransactionEffects(tx: Transaction) {
+  const now = Date.now();
+  
+  switch (tx.type) {
+    case 'expense': {
+      if (tx.fromAccountId) {
+        const acc = await db.accounts.get(tx.fromAccountId);
+        if (acc) {
+          acc.balance += tx.amount; // Возвращаем
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+          
+          if (acc.type === 'credit' && acc.debtId) {
+            const debt = await db.debts.get(acc.debtId);
+            if (debt) {
+              debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
+              debt.updatedAt = now;
+              await db.debts.put(debt);
+            }
+          }
+        }
+      }
+      break;
+    }
+    case 'income': {
+      if (tx.toAccountId) {
+        const acc = await db.accounts.get(tx.toAccountId);
+        if (acc) {
+          acc.balance -= tx.amount; // Забираем
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+        }
+      }
+      break;
+    }
+    case 'transfer': {
+      if (tx.fromAccountId && tx.toAccountId) {
+        const fromAcc = await db.accounts.get(tx.fromAccountId);
+        const toAcc = await db.accounts.get(tx.toAccountId);
+        
+        if (fromAcc && toAcc) {
+          fromAcc.balance += tx.amount;
+          fromAcc.updatedAt = now;
+          await db.accounts.put(fromAcc);
+          
+          toAcc.balance -= tx.amount;
+          toAcc.updatedAt = now;
+          await db.accounts.put(toAcc);
+        }
+      }
+      break;
+    }
+    case 'debt_payment': {
+      if (tx.debtId) {
+        const debt = await db.debts.get(tx.debtId);
+        if (debt) {
+          debt.currentAmount += tx.amount; // Возвращаем долг
+          debt.updatedAt = now;
+          await db.debts.put(debt);
+          
+          if (debt.linkedAccountId) {
+            const acc = await db.accounts.get(debt.linkedAccountId);
+            if (acc) {
+              acc.balance = Math.max(-(acc.limit || 0), acc.balance - tx.amount);
+              acc.updatedAt = now;
+              await db.accounts.put(acc);
+            }
+          }
+        }
+      }
+      if (tx.fromAccountId) {
+        const acc = await db.accounts.get(tx.fromAccountId);
+        if (acc) {
+          acc.balance += tx.amount;
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+        }
+      }
+      break;
+    }
+    case 'debt_borrow': {
+      if (tx.debtId) {
+        const debt = await db.debts.get(tx.debtId);
+        if (debt) {
+          debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
+          debt.updatedAt = now;
+          await db.debts.put(debt);
+          
+          if (debt.linkedAccountId) {
+            const acc = await db.accounts.get(debt.linkedAccountId);
+            if (acc) {
+              acc.balance = Math.min(acc.limit || 0, acc.balance + tx.amount);
+              acc.updatedAt = now;
+              await db.accounts.put(acc);
+            }
+          }
+        }
+      }
+      if (tx.toAccountId) {
+        const acc = await db.accounts.get(tx.toAccountId);
+        if (acc) {
+          acc.balance -= tx.amount;
+          acc.updatedAt = now;
+          await db.accounts.put(acc);
+        }
+      }
+      break;
+    }
+  }
+}
+
+// ==========================================
+// СОЗДАНИЕ ТРАНЗАКЦИИ С ЭФФЕКТАМИ
+// ==========================================
+
 export async function createTransactionWithEffects(
   txData: Omit<Transaction, 'id' | 'createdAt' | 'synced'>
 ): Promise<string> {
@@ -1129,134 +1940,111 @@ export async function createTransactionWithEffects(
     synced: false,
   };
 
-  // Атомарная транзакция Dexie — всё или ничего
   await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    // 1. Сохраняем саму транзакцию
     await db.transactions.add(transaction);
-
-    // 2. Применяем эффекты в зависимости от типа
-    switch (txData.type) {
-      case 'expense': {
-        if (txData.fromAccountId) {
-          const acc = await db.accounts.get(txData.fromAccountId);
-          if (acc) {
-            acc.balance -= txData.amount;
-            acc.updatedAt = now;
-            await db.accounts.put(acc);
-            
-            // Если это кредитка — увеличиваем связанный долг
-            if (acc.type === 'credit' && acc.debtId) {
-              const debt = await db.debts.get(acc.debtId);
-              if (debt) {
-                debt.currentAmount += txData.amount;
-                debt.updatedAt = now;
-                await db.debts.put(debt);
-              }
-            }
-          }
-        }
-        break;
-      }
-
-      case 'income': {
-        if (txData.toAccountId) {
-          const acc = await db.accounts.get(txData.toAccountId);
-          if (acc) {
-            acc.balance += txData.amount;
-            acc.updatedAt = now;
-            await db.accounts.put(acc);
-          }
-        }
-        break;
-      }
-
-      case 'transfer': {
-        if (txData.fromAccountId && txData.toAccountId) {
-          const fromAcc = await db.accounts.get(txData.fromAccountId);
-          const toAcc = await db.accounts.get(txData.toAccountId);
-          
-          if (fromAcc && toAcc) {
-            fromAcc.balance -= txData.amount;
-            fromAcc.updatedAt = now;
-            await db.accounts.put(fromAcc);
-            
-            toAcc.balance += txData.amount;
-            toAcc.updatedAt = now;
-            await db.accounts.put(toAcc);
-          }
-        }
-        break;
-      }
-
-      case 'debt_payment': {
-        if (txData.debtId) {
-          const debt = await db.debts.get(txData.debtId);
-          if (debt) {
-            debt.currentAmount = Math.max(0, debt.currentAmount - txData.amount);
-            debt.updatedAt = now;
-            await db.debts.put(debt);
-            
-            // Если долг связан со счётом (кредитка) — обновляем и счёт
-            if (debt.linkedAccountId) {
-              const acc = await db.accounts.get(debt.linkedAccountId);
-              if (acc) {
-                acc.balance = Math.min(acc.limit || 0, acc.balance + txData.amount);
-                acc.updatedAt = now;
-                await db.accounts.put(acc);
-              }
-            }
-          }
-        }
-        // Опционально списываем со счёта
-        if (txData.fromAccountId) {
-          const acc = await db.accounts.get(txData.fromAccountId);
-          if (acc) {
-            acc.balance -= txData.amount;
-            acc.updatedAt = now;
-            await db.accounts.put(acc);
-          }
-        }
-        break;
-      }
-
-      case 'debt_borrow': {
-        if (txData.debtId) {
-          const debt = await db.debts.get(txData.debtId);
-          if (debt) {
-            debt.currentAmount += txData.amount;
-            debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
-            debt.updatedAt = now;
-            await db.debts.put(debt);
-            
-            // Если долг связан со счётом — обновляем и счёт
-            if (debt.linkedAccountId) {
-              const acc = await db.accounts.get(debt.linkedAccountId);
-              if (acc) {
-                acc.balance = Math.max(-(acc.limit || 0), acc.balance - txData.amount);
-                acc.updatedAt = now;
-                await db.accounts.put(acc);
-              }
-            }
-          }
-        }
-        // Опционально зачисляем на счёт
-        if (txData.toAccountId) {
-          const acc = await db.accounts.get(txData.toAccountId);
-          if (acc) {
-            acc.balance += txData.amount;
-            acc.updatedAt = now;
-            await db.accounts.put(acc);
-          }
-        }
-        break;
-      }
-    }
+    await applyTransactionEffects(transaction); // Используем общую функцию
   });
 
   return txId;
 }
 
-// 5. Вспомогательная функция для связи кредитки с долгом
+// ==========================================
+// РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ
+// ==========================================
+
+export async function updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>) {
+  await db.accounts.update(id, {
+    ...data,
+    updatedAt: Date.now(),
+    synced: false,
+  });
+}
+
+export async function deleteAccount(id: string) {
+  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
+    const acc = await db.accounts.get(id);
+    
+    if (acc) {
+      // Если это кредитка — удаляем связанный долг
+      if (acc.type === 'credit' && acc.debtId) {
+        // Сначала удаляем все транзакции, связанные с долгом
+        await db.transactions.where('debtId').equals(acc.debtId).delete();
+        // Удаляем сам долг
+        await db.debts.delete(acc.debtId);
+      }
+      
+      // Удаляем все транзакции, связанные со счётом
+      await db.transactions.where('fromAccountId').equals(id).delete();
+      await db.transactions.where('toAccountId').equals(id).delete();
+      
+      // Удаляем сам счёт
+      await db.accounts.delete(id);
+    }
+  });
+}
+
+export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>) {
+  await db.debts.update(id, {
+    ...data,
+    updatedAt: Date.now(),
+    synced: false,
+  });
+}
+
+export async function deleteDebt(id: string) {
+  await db.transaction('rw', db.debts, db.accounts, db.transactions, async () => {
+    const debt = await db.debts.get(id);
+    
+    if (debt) {
+      // Если это долг кредитной карты — удаляем связанный счёт
+      if (debt.type === 'credit_card' && debt.linkedAccountId) {
+        // Сначала удаляем все транзакции, связанные со счётом
+        await db.transactions.where('fromAccountId').equals(debt.linkedAccountId).delete();
+        await db.transactions.where('toAccountId').equals(debt.linkedAccountId).delete();
+        // Удаляем сам счёт
+        await db.accounts.delete(debt.linkedAccountId);
+      }
+      
+      // Удаляем все транзакции, связанные с долгом
+      await db.transactions.where('debtId').equals(id).delete();
+      
+      // Удаляем сам долг
+      await db.debts.delete(id);
+    }
+  });
+}
+
+export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'synced'>>) {
+  const oldTx = await db.transactions.get(id);
+  if (!oldTx) return;
+
+  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
+    // 1. Отменяем эффекты старой транзакции
+    await reverseTransactionEffects(oldTx);
+    
+    // 2. Обновляем саму транзакцию
+    const updatedTx: Transaction = { 
+      ...oldTx, 
+      ...newData, 
+      synced: false 
+    };
+    await db.transactions.put(updatedTx);
+    
+    // 3. Применяем эффекты новой транзакции
+    await applyTransactionEffects(updatedTx);
+  });
+}
+
+export async function deleteTransaction(id: string) {
+  const tx = await db.transactions.get(id);
+  if (!tx) return;
+
+  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
+    await reverseTransactionEffects(tx);
+    await db.transactions.delete(id);
+  });
+}
+
 export async function linkCreditCardToDebt(accountId: string, debtId: string) {
   await db.transaction('rw', db.accounts, db.debts, async () => {
     const acc = await db.accounts.get(accountId);
@@ -1269,6 +2057,23 @@ export async function linkCreditCardToDebt(accountId: string, debtId: string) {
       await db.debts.put(debt);
     }
   });
+}
+
+
+─────────────────────────────────────────
+FILE: hooks\useFinanceMetrics.ts
+─────────────────────────────────────────
+import { Account, Debt } from "@/db";
+
+export function useFinanceMetrics(accounts: Account[] | undefined, debts: Debt[] | undefined) {
+  const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
+  const creditAccounts = accounts?.filter(a => a.type === 'credit') || [];
+    
+  const totalBalance = debitAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const totalCreditLimit = creditAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
+
+  return { totalBalance, totalCreditLimit, totalDebt };
 }
 
 
@@ -1303,6 +2108,6 @@ export function useOnlineStatus() {
 
 
 =============================================
-Обработано файлов: 9
+Обработано файлов: 20
 Пропущено файлов: 1
-Размер экспорта: 53392 байт
+Размер экспорта: 85337 байт
