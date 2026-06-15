@@ -9,51 +9,9 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
-    // КРИТИЧНО: что отдавать при навигации оффлайн
+    // Только fallback для оффлайна, всё остальное делает библиотека
     navigateFallback: "/offline.html",
-    // Кэшировать все навигационные запросы
-    runtimeCaching: [
-      {
-        urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
-        handler: "CacheFirst",
-        options: {
-          cacheName: "google-fonts",
-          expiration: {
-            maxEntries: 4,
-            maxAgeSeconds: 365 * 24 * 60 * 60,
-          },
-        },
-      },
-      {
-        // Кэшировать все навигации (HTML-страницы)
-        urlPattern: ({ request }) => request.mode === "navigate",
-        handler: "NetworkFirst",
-        options: {
-          cacheName: "pages-cache",
-          networkTimeoutSeconds: 3,
-          expiration: {
-            maxEntries: 50,
-            maxAgeSeconds: 30 * 24 * 60 * 60, // 30 дней
-          },
-        },
-      },
-      {
-        // Кэшировать статику (JS, CSS, картинки)
-        urlPattern: ({ request }) => 
-          request.destination === "script" ||
-          request.destination === "style" ||
-          request.destination === "image" ||
-          request.destination === "font",
-        handler: "CacheFirst",
-        options: {
-          cacheName: "static-cache",
-          expiration: {
-            maxEntries: 100,
-            maxAgeSeconds: 365 * 24 * 60 * 60, // 1 год
-          },
-        },
-      },
-    ],
+    navigateFallbackAllowlist: [/^\/$/],
   },
 });
 
