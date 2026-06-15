@@ -6,14 +6,19 @@ import { db } from "@/db";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { AddAccountForm } from "@/components/AddAccountForm";
 import { AddDebtForm } from "@/components/AddDebtForm";
+import { AddTransactionForm } from "@/components/AddTransactionForm";
+import { FAQModal } from "@/components/FAQModal";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddDebt, setShowAddDebt] = useState(false);
+  const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(false);
 
   const accounts = useLiveQuery(() => db.accounts.toArray(), []);
   const debts = useLiveQuery(() => db.debts.toArray(), []);
+  const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().limit(5).toArray(), []);
 
   const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
   const totalBalance = accounts?.reduce((sum, a) => sum + a.balance, 0) || 0;
@@ -23,19 +28,34 @@ export default function Home() {
       {/* Шапка */}
       <header className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Finance Tracker</h1>
-        <div
-          className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
-            isOnline
-              ? "bg-green-500/10 text-green-400 border-green-500/20"
-              : "bg-red-500/10 text-red-400 border-red-500/20"
-          }`}
-        >
-          <span
-            className={`w-2 h-2 rounded-full animate-pulse ${
-              isOnline ? "bg-green-400" : "bg-red-400"
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
+              isOnline
+                ? "bg-green-500/10 text-green-400 border-green-500/20"
+                : "bg-red-500/10 text-red-400 border-red-500/20"
             }`}
-          ></span>
-          {isOnline ? "В сети" : "Оффлайн"}
+          >
+            <span
+              className={`w-2 h-2 rounded-full animate-pulse ${
+                isOnline ? "bg-green-400" : "bg-red-400"
+              }`}
+            ></span>
+            {isOnline ? "В сети" : "Оффлайн"}
+          </div>
+          <button
+            onClick={() => setShowFAQ(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors"
+            title="Помощь"
+          >
+            <span className="text-sm font-bold">?</span>
+          </button>
+          <button
+            onClick={() => setShowAddTransaction(true)}
+            className="btn-primary px-3 py-1 text-sm"
+          >
+            + Операция
+          </button>
         </div>
       </header>
 
@@ -117,9 +137,35 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Последние транзакции */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold mb-3">Последние операции</h2>
+        <div className="space-y-3">
+          {transactions && transactions.length > 0 ? (
+            transactions.map((tx) => (
+              <div key={tx.id} className="card flex justify-between items-center">
+                <div>
+                  <p className="font-medium">{tx.description || tx.type}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(tx.date).toLocaleDateString('ru-RU')}
+                  </p>
+                </div>
+                <p className={`font-mono text-lg ${tx.type === 'expense' || tx.type === 'debt_payment' ? 'text-destructive' : 'text-accent'}`}>
+                  {tx.type === 'expense' || tx.type === 'debt_payment' ? '-' : '+'} ₽ {tx.amount.toLocaleString('ru-RU')}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4">Операций пока нет</p>
+          )}
+        </div>
+      </section>
+
       {/* Модальные окна */}
       {showAddAccount && <AddAccountForm onClose={() => setShowAddAccount(false)} />}
       {showAddDebt && <AddDebtForm onClose={() => setShowAddDebt(false)} />}
+      {showAddTransaction && <AddTransactionForm onClose={() => setShowAddTransaction(false)} />}
+      {showFAQ && <FAQModal onClose={() => setShowFAQ(false)} />}
     </div>
   );
 }
