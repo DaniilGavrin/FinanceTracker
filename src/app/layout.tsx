@@ -31,6 +31,18 @@ export default function RootLayout({
       {/* Используем системные шрифты, которые уже есть в globals.css. Никаких внешних запросов! */}
       <body className="antialiased">
         {children}
+
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                  .then(reg => console.log('SW registered'))
+                  .catch(err => console.log('SW registration failed', err));
+              });
+            }
+          `
+        }} />
       </body>
     </html>
   );
