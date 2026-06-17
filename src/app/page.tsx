@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDatabase } from "@/hooks/useDatabase";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { deleteAccount, deleteDebt, deleteTransaction } from "@/db";
@@ -34,7 +34,7 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'account' | 'debt' | 'transaction'; id: string; name: string } | null>(null);
 
   // Миграция из IndexedDB (один раз)
-  useState(() => {
+  useEffect(() => {
     if (!migrationDone) {
       migrateFromIndexedDB().then((migrated) => {
         if (migrated) {
@@ -47,7 +47,7 @@ export default function Home() {
         setMigrationDone(true);
       });
     }
-  });
+  }, [migrationDone, refresh]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;

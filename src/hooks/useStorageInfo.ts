@@ -27,7 +27,7 @@ export function useStorageInfo(): StorageStatus | null {
         try {
           const stat = await Filesystem.stat({
             directory: Directory.Data,
-            path: "databases/finance.db",
+            path: "databases/financeSQLite.db",
           });
           dbSize = stat.size || 0;
         } catch (e) {

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { createAccount, createCreditCard, BankType } from "@/db";
+import { createAccount, createCreditCard, createInstallment, BankType } from "@/db";
 
 export function AddAccountForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<"debit" | "cash" | "credit">("debit");
+  const [type, setType] = useState<"debit" | "cash" | "credit" | "installment">("debit");
   const [balance, setBalance] = useState("");
   const [limit, setLimit] = useState("");
   const [bank, setBank] = useState<BankType>("sber");
@@ -15,15 +15,22 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     
     if (type === "credit") {
-      // Создаём кредитку + долг автоматически
       await createCreditCard({
         name,
         limit: parseFloat(limit) || 0,
+        currentBalance: parseFloat(balance) || parseFloat(limit) || 0,
+        bank,
+        openedAt: new Date(openedAt).getTime(),
+      });
+    } else if (type === "installment") {
+      await createInstallment({
+        name,
+        limit: parseFloat(limit) || 0,
+        currentBalance: parseFloat(balance) || parseFloat(limit) || 0,
         bank,
         openedAt: new Date(openedAt).getTime(),
       });
     } else {
-      // Обычный счёт
       await createAccount({
         name,
         type,
@@ -35,6 +42,9 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
 
     onClose();
   };
+
+  // Показываем лимит и баланс для кредиток и рассрочек
+  const showLimitAndBalance = type === "credit" || type === "installment";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -48,7 +58,11 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Т-Банк Черная"
+              placeholder={
+                type === "installment" ? "Например: Ozon Рассрочка" : 
+                type === "credit" ? "Например: Т-Банк Black" :
+                "Например: Т-Банк Черная"
+              }
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               required
             />
@@ -64,6 +78,7 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
               <option value="debit">Дебетовая карта</option>
               <option value="cash">Наличные</option>
               <option value="credit">Кредитная карта</option>
+              <option value="installment">Рассрочка</option>
             </select>
           </div>
 
@@ -94,7 +109,7 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Баланс (для дебетовых и наличных) */}
-          {type !== "credit" && (
+          {!showLimitAndBalance && (
             <div>
               <label className="block text-sm font-medium mb-1">Баланс (₽)</label>
               <input
@@ -109,23 +124,41 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Лимит (для кредиток) */}
-          {type === "credit" && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Кредитный лимит (₽)</label>
-              <input
-                type="number"
-                value={limit}
-                onChange={(e) => setLimit(e.target.value)}
-                placeholder="60000"
-                step="0.01"
-                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                required
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Долг создастся автоматически с нулевым балансом
-              </p>
-            </div>
+          {/* Лимит и баланс (для кредиток и рассрочек) */}
+          {showLimitAndBalance && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {type === "installment" ? "Лимит рассрочки" : "Кредитный лимит"} (₽)
+                </label>
+                <input
+                  type="number"
+                  value={limit}
+                  onChange={(e) => setLimit(e.target.value)}
+                  placeholder={type === "installment" ? "6000" : "60000"}
+                  step="0.01"
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Текущий баланс (₽)</label>
+                <input
+                  type="number"
+                  value={balance}
+                  onChange={(e) => setBalance(e.target.value)}
+                  placeholder="Оставьте пустым, если новое"
+                  step="0.01"
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {type === "installment" 
+                    ? "Разница между лимитом и балансом станет долгом по рассрочке"
+                    : "Разница между лимитом и балансом станет долгом по кредитке"}
+                </p>
+              </div>
+            </>
           )}
 
           <div className="flex gap-3 pt-2">

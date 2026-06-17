@@ -39,22 +39,32 @@ export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>
   return id;
 }
 
+// ==========================================
+// КРЕДИТНАЯ КАРТА (с текущим балансом)
+// ==========================================
+
 export async function createCreditCard(params: {
   name: string;
   limit: number;
+  currentBalance?: number;
   bank: BankType;
   openedAt: number;
 }): Promise<{ accountId: string; debtId: string }> {
   const accountId = uuidv4();
   const debtId = uuidv4();
   const now = Date.now();
+  
+  // Рассчитываем долг как разницу между лимитом и текущим балансом
+  const currentBalance = params.currentBalance ?? params.limit;
+  const debtAmount = Math.max(0, params.limit - currentBalance);
 
+  // Создаём долг
   await db.addDebt({
     id: debtId,
     name: params.name,
     type: 'credit_card',
-    totalAmount: 0,
-    currentAmount: 0,
+    totalAmount: debtAmount,
+    currentAmount: debtAmount,
     linkedAccountId: accountId,
     bank: params.bank,
     startDate: params.openedAt,
@@ -62,11 +72,62 @@ export async function createCreditCard(params: {
     synced: false,
   });
 
+  // Создаём счёт с текущим балансом (НЕ с лимитом!)
   await db.addAccount({
     id: accountId,
     name: params.name,
     type: 'credit',
-    balance: params.limit,
+    balance: currentBalance,
+    limit: params.limit,
+    debtId: debtId,
+    bank: params.bank,
+    openedAt: params.openedAt,
+    updatedAt: now,
+    synced: false,
+  });
+
+  return { accountId, debtId };
+}
+
+// ==========================================
+// РАССРОЧКА (новый тип счёта)
+// ==========================================
+
+export async function createInstallment(params: {
+  name: string;
+  limit: number;
+  currentBalance?: number;
+  bank: BankType;
+  openedAt: number;
+}): Promise<{ accountId: string; debtId: string }> {
+  const accountId = uuidv4();
+  const debtId = uuidv4();
+  const now = Date.now();
+  
+  // Рассчитываем долг как разницу между лимитом и текущим балансом
+  const currentBalance = params.currentBalance ?? params.limit;
+  const debtAmount = Math.max(0, params.limit - currentBalance);
+
+  // Создаём долг типа installment
+  await db.addDebt({
+    id: debtId,
+    name: params.name,
+    type: 'installment',
+    totalAmount: debtAmount,
+    currentAmount: debtAmount,
+    linkedAccountId: accountId,
+    bank: params.bank,
+    startDate: params.openedAt,
+    updatedAt: now,
+    synced: false,
+  });
+
+  // Создаём счёт типа installment
+  await db.addAccount({
+    id: accountId,
+    name: params.name,
+    type: 'installment',
+    balance: currentBalance,
     limit: params.limit,
     debtId: debtId,
     bank: params.bank,
@@ -90,7 +151,7 @@ async function applyTransactionEffects(tx: Transaction): Promise<void> {
         if (acc) {
           await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
           
-          if (acc.type === 'credit' && acc.debtId) {
+          if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
             const debt = await db.getDebtById(acc.debtId);
             if (debt) {
               await db.updateDebt(debt.id, {
@@ -310,9 +371,9 @@ export async function updateAccount(id: string, data: Partial<Omit<Account, 'id'
 
 export async function deleteAccount(id: string): Promise<void> {
   const acc = await db.getAccountById(id);
-  
   if (acc) {
-    if (acc.type === 'credit' && acc.debtId) {
+    // Если это кредитка/рассрочка — удаляем связанный долг
+    if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
       const transactions = await db.getTransactions();
       for (const tx of transactions) {
         if (tx.debtId === acc.debtId) {
@@ -339,9 +400,9 @@ export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'up
 
 export async function deleteDebt(id: string): Promise<void> {
   const debt = await db.getDebtById(id);
-  
   if (debt) {
-    if (debt.type === 'credit_card' && debt.linkedAccountId) {
+    // Если это долг кредитки/рассрочки — удаляем связанный счёт
+    if ((debt.type === 'credit_card' || debt.type === 'installment') && debt.linkedAccountId) {
       const transactions = await db.getTransactions();
       for (const tx of transactions) {
         if (tx.fromAccountId === debt.linkedAccountId || tx.toAccountId === debt.linkedAccountId) {

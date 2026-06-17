@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 17.06.2026 15:42:40
+Дата: 17.06.2026 17:35:01
 Структура: src/
 
 =============================================
@@ -134,9 +134,10 @@ FILE: app\page.tsx
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, deleteAccount, deleteDebt, deleteTransaction } from "@/db";
+import { useDatabase } from "@/hooks/useDatabase";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { deleteAccount, deleteDebt, deleteTransaction } from "@/db";
+import { migrateFromIndexedDB } from "@/lib/migration";
 
 import { AddAccountForm } from "@/components/AddAccountForm";
 import { AddDebtForm } from "@/components/AddDebtForm";
@@ -154,7 +155,9 @@ type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const { accounts, debts, transactions, isReady, refresh } = useDatabase();
   const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [migrationDone, setMigrationDone] = useState(false);
   
   // Модалки
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -163,10 +166,21 @@ export default function Home() {
   const [showFAQ, setShowFAQ] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'account' | 'debt' | 'transaction'; id: string; name: string } | null>(null);
 
-  // Данные (для операций берем все, без limit)
-  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
-  const debts = useLiveQuery(() => db.debts.toArray(), []);
-  const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().toArray(), []);
+  // Миграция из IndexedDB (один раз)
+  useState(() => {
+    if (!migrationDone) {
+      migrateFromIndexedDB().then((migrated) => {
+        if (migrated) {
+          refresh();
+          alert('Данные успешно перенесены из старой версии приложения');
+        }
+        setMigrationDone(true);
+      }).catch((error) => {
+        console.error('Ошибка миграции:', error);
+        setMigrationDone(true);
+      });
+    }
+  });
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -174,6 +188,7 @@ export default function Home() {
       if (deleteTarget.type === 'account') await deleteAccount(deleteTarget.id);
       if (deleteTarget.type === 'debt') await deleteDebt(deleteTarget.id);
       if (deleteTarget.type === 'transaction') await deleteTransaction(deleteTarget.id);
+      await refresh(); // Обновляем данные после удаления
     } catch (error) {
       console.error('Ошибка удаления:', error);
     }
@@ -183,6 +198,22 @@ export default function Home() {
   const handleDeleteRequest = (type: 'account' | 'debt' | 'transaction', id: string, name: string) => {
     setDeleteTarget({ type, id, name });
   };
+
+  // Обёртка для обновления данных после добавления
+  const handleDataChanged = () => {
+    refresh();
+  };
+
+  if (!isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin text-4xl mb-4">⏳</div>
+          <p className="text-muted-foreground">Инициализация базы данных...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -229,10 +260,10 @@ export default function Home() {
       {/* Нижняя навигация */}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Глобальные модалки */}
-      {showAddAccount && <AddAccountForm onClose={() => setShowAddAccount(false)} />}
-      {showAddDebt && <AddDebtForm onClose={() => setShowAddDebt(false)} />}
-      {showAddTransaction && <AddTransactionForm onClose={() => setShowAddTransaction(false)} />}
+      {/* Глобальные модалки — передаём onDataChanged для обновления */}
+      {showAddAccount && <AddAccountForm onClose={() => { setShowAddAccount(false); handleDataChanged(); }} />}
+      {showAddDebt && <AddDebtForm onClose={() => { setShowAddDebt(false); handleDataChanged(); }} />}
+      {showAddTransaction && <AddTransactionForm onClose={() => { setShowAddTransaction(false); handleDataChanged(); }} />}
       {showFAQ && <FAQModal onClose={() => setShowFAQ(false)} />}
       {deleteTarget && (
         <ConfirmDialog 
@@ -253,11 +284,11 @@ FILE: components\AddAccountForm.tsx
 "use client";
 
 import { useState } from "react";
-import { createAccount, createCreditCard, BankType } from "@/db";
+import { createAccount, createCreditCard, createInstallment, BankType } from "@/db";
 
 export function AddAccountForm({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<"debit" | "cash" | "credit">("debit");
+  const [type, setType] = useState<"debit" | "cash" | "credit" | "installment">("debit");
   const [balance, setBalance] = useState("");
   const [limit, setLimit] = useState("");
   const [bank, setBank] = useState<BankType>("sber");
@@ -267,15 +298,22 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     
     if (type === "credit") {
-      // Создаём кредитку + долг автоматически
       await createCreditCard({
         name,
         limit: parseFloat(limit) || 0,
+        currentBalance: parseFloat(balance) || parseFloat(limit) || 0,
+        bank,
+        openedAt: new Date(openedAt).getTime(),
+      });
+    } else if (type === "installment") {
+      await createInstallment({
+        name,
+        limit: parseFloat(limit) || 0,
+        currentBalance: parseFloat(balance) || parseFloat(limit) || 0,
         bank,
         openedAt: new Date(openedAt).getTime(),
       });
     } else {
-      // Обычный счёт
       await createAccount({
         name,
         type,
@@ -287,6 +325,9 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
 
     onClose();
   };
+
+  // Показываем лимит и баланс для кредиток и рассрочек
+  const showLimitAndBalance = type === "credit" || type === "installment";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -300,7 +341,11 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Т-Банк Черная"
+              placeholder={
+                type === "installment" ? "Например: Ozon Рассрочка" : 
+                type === "credit" ? "Например: Т-Банк Black" :
+                "Например: Т-Банк Черная"
+              }
               className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               required
             />
@@ -316,6 +361,7 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
               <option value="debit">Дебетовая карта</option>
               <option value="cash">Наличные</option>
               <option value="credit">Кредитная карта</option>
+              <option value="installment">Рассрочка</option>
             </select>
           </div>
 
@@ -346,7 +392,7 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Баланс (для дебетовых и наличных) */}
-          {type !== "credit" && (
+          {!showLimitAndBalance && (
             <div>
               <label className="block text-sm font-medium mb-1">Баланс (₽)</label>
               <input
@@ -361,23 +407,41 @@ export function AddAccountForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Лимит (для кредиток) */}
-          {type === "credit" && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Кредитный лимит (₽)</label>
-              <input
-                type="number"
-                value={limit}
-                onChange={(e) => setLimit(e.target.value)}
-                placeholder="60000"
-                step="0.01"
-                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                required
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Долг создастся автоматически с нулевым балансом
-              </p>
-            </div>
+          {/* Лимит и баланс (для кредиток и рассрочек) */}
+          {showLimitAndBalance && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {type === "installment" ? "Лимит рассрочки" : "Кредитный лимит"} (₽)
+                </label>
+                <input
+                  type="number"
+                  value={limit}
+                  onChange={(e) => setLimit(e.target.value)}
+                  placeholder={type === "installment" ? "6000" : "60000"}
+                  step="0.01"
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Текущий баланс (₽)</label>
+                <input
+                  type="number"
+                  value={balance}
+                  onChange={(e) => setBalance(e.target.value)}
+                  placeholder="Оставьте пустым, если новое"
+                  step="0.01"
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {type === "installment" 
+                    ? "Разница между лимитом и балансом станет долгом по рассрочке"
+                    : "Разница между лимитом и балансом станет долгом по кредитке"}
+                </p>
+              </div>
+            </>
           )}
 
           <div className="flex gap-3 pt-2">
@@ -590,9 +654,8 @@ FILE: components\AddTransactionForm.tsx
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, TransactionType } from "@/db";
-import { createTransactionWithEffects } from "@/db";
+import { useDatabase } from "@/hooks/useDatabase";
+import { createTransactionWithEffects, TransactionType } from "@/db";
 import { DEFAULT_CATEGORIES, Category } from "@/lib/categories";
 
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
@@ -605,8 +668,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categoryId, setCategoryId] = useState("");
 
-  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
-  const debts = useLiveQuery(() => db.debts.toArray(), []);
+  const { accounts, debts } = useDatabase();
 
   const allAccounts = accounts || [];
 
@@ -913,6 +975,79 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
 
 
 ─────────────────────────────────────────
+FILE: components\CollapsibleSection.tsx
+─────────────────────────────────────────
+"use client";
+
+import { useState } from "react";
+
+interface Props {
+  title: string;
+  icon: string;
+  status?: "success" | "warning" | "error" | "neutral";
+  statusText?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+export function CollapsibleSection({ title, icon, status = "neutral", statusText, children, defaultOpen = false }: Props) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  const statusColors = {
+    success: "text-green-500",
+    warning: "text-yellow-500",
+    error: "text-red-500",
+    neutral: "text-muted-foreground",
+  };
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-4 hover:bg-secondary/30 transition-colors"
+      >
+        <div className="flex items-center gap-3 flex-1">
+          <span className="text-2xl">{icon}</span>
+          <div className="flex-1 text-left">
+            <h3 className="font-semibold text-sm">{title}</h3>
+            {statusText && (
+              <p className={`text-xs mt-0.5 ${statusColors[status]}`}>
+                {statusText}
+              </p>
+            )}
+          </div>
+        </div>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`}
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+      
+      <div
+        className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          isOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        <div className="px-4 pb-4 pt-2 border-t border-border">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
 FILE: components\ConfirmDialog.tsx
 ─────────────────────────────────────────
 "use client";
@@ -1100,9 +1235,8 @@ FILE: components\PermissionChecker.tsx
 "use client";
 
 import { useState, useEffect } from "react";
-import { Device } from "@capacitor/device";
 import { LocalNotifications } from "@capacitor/local-notifications";
-import { Camera, CameraPermissionState } from "@capacitor/camera";
+import { Camera } from "@capacitor/camera";
 import { Network } from "@capacitor/network";
 import { BleClient } from "@capacitor-community/bluetooth-le";
 import { App } from "@capacitor/app";
@@ -1117,38 +1251,18 @@ interface PermissionCheck {
   action?: () => void;
 }
 
-export function PermissionChecker() {
+interface Props {
+  showDeviceInfo?: boolean;
+}
+
+export function PermissionChecker({ showDeviceInfo = true }: Props) {
   const [checks, setChecks] = useState<PermissionCheck[]>([]);
-  const [deviceInfo, setDeviceInfo] = useState<string>("Определяем...");
 
   useEffect(() => {
     const runChecks = async () => {
       const newChecks: PermissionCheck[] = [];
-      let isCapacitor = false;
 
-      // 1. Проверка устройства
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 2000)
-        );
-
-        const info = await Promise.race([
-          Device.getInfo(),
-          timeoutPromise
-        ]) as any;
-
-        setDeviceInfo(`${info.name || info.model || "Устройство"} • ${info.platform?.toUpperCase() || "UNKNOWN"}`);
-        isCapacitor = true;
-      } catch (e) {
-        setDeviceInfo("Веб-браузер");
-      }
-
-      if (!isCapacitor) {
-        setChecks([]);
-        return;
-      }
-
-      // 2. Уведомления
+      // 1. Уведомления
       try {
         const notifResult = await LocalNotifications.checkPermissions();
         const notifStatus: Status =
@@ -1163,9 +1277,7 @@ export function PermissionChecker() {
             await LocalNotifications.requestPermissions();
             runChecks();
           } : notifStatus === "denied" ? async () => {
-            // Открываем настройки приложения через App plugin
             await App.getInfo();
-            // На Android можно использовать Intent, но проще показать подсказку
             alert("Откройте: Настройки → Приложения → Finance Tracker → Уведомления");
           } : undefined,
         });
@@ -1177,7 +1289,7 @@ export function PermissionChecker() {
         });
       }
 
-      // 3. Камера
+      // 2. Камера
       try {
         const camResult = await Camera.checkPermissions() as any;
         const camPermission = camResult.camera || "prompt";
@@ -1204,7 +1316,7 @@ export function PermissionChecker() {
         });
       }
 
-      // 4. Сеть (Wi-Fi / Мобильные данные)
+      // 3. Сеть
       try {
         const networkStatus = await Network.getStatus();
         const isConnected = networkStatus.connected;
@@ -1238,7 +1350,7 @@ export function PermissionChecker() {
         });
       }
 
-      // 5. Bluetooth
+      // 4. Bluetooth
       try {
         await BleClient.initialize();
         const bleEnabled = await BleClient.isEnabled();
@@ -1298,49 +1410,38 @@ export function PermissionChecker() {
   };
 
   return (
-    <div className="card space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold flex items-center gap-2">
-          🛡️ Состояние системы
-        </h3>
-        <span className="text-xs font-mono bg-secondary px-2 py-1 rounded text-muted-foreground">
-          {deviceInfo}
-        </span>
-      </div>
-
-      <div className="space-y-3">
-        {checks.map((check, idx) => (
-          <div key={idx} className="flex items-start justify-between p-3 bg-secondary/50 rounded-lg border border-border">
-            <div className="flex-1 pr-4">
-              <p className="font-medium text-sm flex items-center gap-2">
-                {check.name}
-                {getStatusIcon(check.status)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {check.description}
-                {check.detail && (
-                  <span className="ml-1 font-mono text-primary">({check.detail})</span>
-                )}
-              </p>
-
-              {check.status === "denied" && (
-                <p className="text-xs text-destructive mt-2">
-                  Разрешение заблокировано. Откройте настройки приложения.
-                </p>
+    <div className="space-y-3">
+      {checks.map((check, idx) => (
+        <div key={idx} className="flex items-start justify-between p-3 bg-secondary/50 rounded-lg border border-border">
+          <div className="flex-1 pr-4">
+            <p className="font-medium text-sm flex items-center gap-2">
+              {check.name}
+              {getStatusIcon(check.status)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {check.description}
+              {check.detail && (
+                <span className="ml-1 font-mono text-primary">({check.detail})</span>
               )}
-            </div>
+            </p>
 
-            {check.action && (
-              <button
-                onClick={check.action}
-                className="btn-primary text-xs px-3 py-1.5 h-fit whitespace-nowrap"
-              >
-                {getActionLabel(check.status)}
-              </button>
+            {check.status === "denied" && (
+              <p className="text-xs text-destructive mt-2">
+                Разрешение заблокировано. Откройте настройки приложения.
+              </p>
             )}
           </div>
-        ))}
-      </div>
+
+          {check.action && (
+            <button
+              onClick={check.action}
+              className="btn-primary text-xs px-3 py-1.5 h-fit whitespace-nowrap"
+            >
+              {getActionLabel(check.status)}
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1598,13 +1699,23 @@ export function AccountItem({ account, onDelete }: Props) {
       <div className="flex-1 min-w-0">
         <p className="font-medium truncate">{account.name}</p>
         <p className="text-xs text-muted-foreground truncate">
-          {account.type === 'debit' ? 'Дебетовая' : account.type === 'credit' ? 'Кредитная' : account.type === 'cash' ? 'Наличные' : account.type}
+          {account.type === 'debit' ? 'Дебетовая' : 
+          account.type === 'credit' ? 'Кредитная' : 
+          account.type === 'installment' ? 'Рассрочка' : 
+          account.type === 'cash' ? 'Наличные' : account.type}
           {bankLabel && ` • ${bankLabel}`}
           {dateLabel && ` • ${dateLabel}`}
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <p className="font-mono text-lg">₽ {account.balance.toLocaleString('ru-RU')}</p>
+        <div className="text-right">
+          <p className="font-mono text-lg">₽ {account.balance.toLocaleString('ru-RU')}</p>
+          {account.limit !== undefined && (
+            <p className="text-[10px] text-muted-foreground font-mono">
+              из ₽ {account.limit.toLocaleString('ru-RU')}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => onDelete(account.id, account.name)}
           className="text-destructive hover:text-destructive/80 transition-opacity md:opacity-0 md:group-hover:opacity-100"
@@ -1922,17 +2033,24 @@ export function HomeView({ accounts, debts, transactions }: Props) {
 FILE: components\views\SettingsView.tsx
 ─────────────────────────────────────────
 "use client";
+
 import { useState } from "react";
-import { db } from "@/db";
+import { getDatabase } from "@/lib/database";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PermissionChecker } from "../PermissionChecker";
+import { CollapsibleSection } from "../CollapsibleSection";
+import { useStorageInfo } from "@/hooks/useStorageInfo";
+import { useDeviceInfo } from "@/hooks/useDeviceInfo";
 
 export function SettingsView() {
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const storageInfo = useStorageInfo();
+  const deviceInfo = useDeviceInfo();
 
   const handleClearAllData = async () => {
     try {
-      await db.delete();
+      const db = getDatabase();
+      await db.importData(JSON.stringify({ accounts: [], debts: [], transactions: [] }));
       window.location.reload();
     } catch (error) {
       console.error("Ошибка очистки данных:", error);
@@ -1940,10 +2058,131 @@ export function SettingsView() {
     }
   };
 
+  const getStatusColor = (status: "success" | "warning" | "error") => {
+    switch (status) {
+      case "success":
+        return "text-green-500";
+      case "warning":
+        return "text-yellow-500";
+      case "error":
+        return "text-red-500";
+    }
+  };
+
+  const getStatusIcon = (status: "success" | "warning" | "error") => {
+    switch (status) {
+      case "success":
+        return "✅";
+      case "warning":
+        return "⚠️";
+      case "error":
+        return "❌";
+    }
+  };
+
+  const getOverallStorageStatus = (): "success" | "warning" | "error" | "neutral" => {
+    if (!storageInfo) return "neutral";
+    
+    if (storageInfo.storageHealthStatus === "error" || storageInfo.writeStatus === "error") {
+      return "error";
+    }
+    if (storageInfo.storageHealthStatus === "warning" || storageInfo.writeStatus === "warning" || storageInfo.freeSpaceStatus === "warning") {
+      return "warning";
+    }
+    return "success";
+  };
+
+  const overallStatus = getOverallStorageStatus();
+  const overallStatusText = storageInfo 
+    ? overallStatus === "success" 
+      ? "Всё в порядке" 
+      : overallStatus === "warning" 
+        ? "Требует внимания" 
+        : "Критическая ситуация"
+    : "Загрузка...";
+
   return (
     <div className="space-y-4 pb-20">
-      {/* Проверка разрешений (работает в Capacitor и Tauri) */}
-      <PermissionChecker />
+      {/* Панель разрешений */}
+      <CollapsibleSection
+        title="Разрешения приложения"
+        icon="🛡️"
+        status="neutral"
+        statusText={deviceInfo ? `${deviceInfo.model} • ${deviceInfo.platform.toUpperCase()}` : "Определение устройства..."}
+        defaultOpen={false}
+      >
+        <PermissionChecker showDeviceInfo={false} />
+      </CollapsibleSection>
+
+      {/* Панель хранилища */}
+      <CollapsibleSection
+        title="Хранилище данных"
+        icon="💾"
+        status={overallStatus === "neutral" ? undefined : overallStatus}
+        statusText={overallStatusText}
+        defaultOpen={true}
+      >
+        {storageInfo ? (
+          <div className="space-y-4">
+            {/* Размер базы данных */}
+            <div className="p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Размер базы данных</span>
+                <span className={`text-lg ${getStatusColor(storageInfo.dbSizeStatus)}`}>
+                  {getStatusIcon(storageInfo.dbSizeStatus)}
+                </span>
+              </div>
+              <p className={`text-xs ${getStatusColor(storageInfo.dbSizeStatus)}`}>
+                {storageInfo.dbSizeText}
+              </p>
+            </div>
+
+            {/* Свободное место */}
+            <div className="p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Свободное место</span>
+                <span className={`text-lg ${getStatusColor(storageInfo.freeSpaceStatus)}`}>
+                  {getStatusIcon(storageInfo.freeSpaceStatus)}
+                </span>
+              </div>
+              <p className={`text-xs ${getStatusColor(storageInfo.freeSpaceStatus)}`}>
+                {storageInfo.freeSpaceText}
+              </p>
+            </div>
+
+            {/* Здоровье хранилища */}
+            <div className="p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Здоровье хранилища</span>
+                <span className={`text-lg ${getStatusColor(storageInfo.storageHealthStatus)}`}>
+                  {getStatusIcon(storageInfo.storageHealthStatus)}
+                </span>
+              </div>
+              <p className={`text-xs ${getStatusColor(storageInfo.storageHealthStatus)}`}>
+                {storageInfo.storageHealthText}
+              </p>
+            </div>
+
+            {/* Статус записи */}
+            <div className="p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Статус записи в БД</span>
+                <span className={`text-lg ${getStatusColor(storageInfo.writeStatus)}`}>
+                  {getStatusIcon(storageInfo.writeStatus)}
+                </span>
+              </div>
+              <p className={`text-xs ${getStatusColor(storageInfo.writeStatus)}`}>
+                {storageInfo.writeStatusText}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <div className="animate-spin text-2xl mb-2">⏳</div>
+            <p className="text-sm text-muted-foreground">Загрузка информации о хранилище...</p>
+          </div>
+        )}
+      </CollapsibleSection>
 
       {/* Управление приложением */}
       <div className="card space-y-3">
@@ -1962,7 +2201,7 @@ export function SettingsView() {
       </div>
 
       <div className="text-center text-xs text-muted-foreground pt-8">
-        <p>Finance Tracker v0.2.0</p>
+        <p>Finance Tracker v0.3.0</p>
         <p>ByteWizard © 2026</p>
       </div>
 
@@ -2035,174 +2274,166 @@ export function TransactionsView({ transactions, accounts, debts, onDelete }: Pr
 ─────────────────────────────────────────
 FILE: db\index.ts
 ─────────────────────────────────────────
-import Dexie, { type EntityTable } from 'dexie';
 import { v4 as uuidv4 } from 'uuid';
+import { getDatabase, Account, Debt, Transaction, BankType, TransactionType } from '@/lib/database';
 
-// Типы банков
-export type BankType = 'sber' | 'tbank' | 'other' | 'person';
+// Реэкспортируем типы для обратной совместимости
+export type { Account, Debt, Transaction, BankType, TransactionType };
 
-// 1. Типы данных
-export interface Account {
-  id: string;
-  name: string;
-  type: 'debit' | 'credit' | 'cash';
-  balance: number;
-  limit?: number;
-  debtId?: string;
-  bank?: BankType;
-  openedAt?: number;
-  updatedAt: number;
-  synced: boolean;
-}
-
-export interface Debt {
-  id: string;
-  name: string;
-  type: 'bank_loan' | 'person' | 'installment' | 'credit_card';
-  totalAmount: number;
-  currentAmount: number;
-  interestRate?: number;
-  linkedAccountId?: string;
-  bank?: BankType;
-  startDate?: number;
-  termMonths?: number;
-  updatedAt: number;
-  synced: boolean;
-}
-
-export type TransactionType = 
-  | 'income' 
-  | 'expense' 
-  | 'transfer' 
-  | 'debt_payment' 
-  | 'debt_borrow';
-
-export interface Transaction {
-  id: string;
-  type: TransactionType;
-  amount: number;
-  fromAccountId?: string;
-  toAccountId?: string;
-  debtId?: string;
-  categoryId?: string; 
-  description?: string;
-  date: number;
-  createdAt: number;
-  updatedAt: number;
-  synced: boolean;
-}
-
-// 2. Инициализация базы
-export class FinanceDB extends Dexie {
-  accounts!: EntityTable<Account, 'id'>;
-  debts!: EntityTable<Debt, 'id'>;
-  transactions!: EntityTable<Transaction, 'id'>;
-
-  constructor() {
-    super('FinanceTrackerDB');
-    
-    this.version(4).stores({
-      accounts: 'id, type, synced, updatedAt, debtId, bank',
-      debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
-      transactions: 'id, fromAccountId, toAccountId, debtId, categoryId, date, type, synced, createdAt' // ← ДОБАВИТЬ categoryId
-    }).upgrade(tx => {
-      // Миграция для старых транзакций: добавляем categoryId как undefined
-      return tx.table('transactions').toCollection().modify(tx => {
-        tx.categoryId = tx.categoryId || undefined;
-      });
-    });
-  }
-}
-
-export const db = new FinanceDB();
+// Экспортируем singleton базы данных
+export const db = getDatabase();
 
 // ==========================================
 // БАЗОВЫЕ ФУНКЦИИ СОЗДАНИЯ
 // ==========================================
 
-export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>) {
-  return db.accounts.add({
+export async function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>): Promise<string> {
+  const id = uuidv4();
+  const now = Date.now();
+  
+  await db.addAccount({
     ...data,
-    id: uuidv4(),
-    updatedAt: Date.now(),
+    id,
+    updatedAt: now,
     synced: false,
   });
+  
+  return id;
 }
 
-export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
-  return db.debts.add({
+export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>): Promise<string> {
+  const id = uuidv4();
+  const now = Date.now();
+  
+  await db.addDebt({
     ...data,
-    id: uuidv4(),
-    updatedAt: Date.now(),
+    id,
+    updatedAt: now,
     synced: false,
   });
+  
+  return id;
 }
+
+// ==========================================
+// КРЕДИТНАЯ КАРТА (с текущим балансом)
+// ==========================================
 
 export async function createCreditCard(params: {
   name: string;
   limit: number;
+  currentBalance?: number;
   bank: BankType;
   openedAt: number;
 }): Promise<{ accountId: string; debtId: string }> {
   const accountId = uuidv4();
   const debtId = uuidv4();
   const now = Date.now();
+  
+  // Рассчитываем долг как разницу между лимитом и текущим балансом
+  const currentBalance = params.currentBalance ?? params.limit;
+  const debtAmount = Math.max(0, params.limit - currentBalance);
 
-  await db.transaction('rw', db.accounts, db.debts, async () => {
-    await db.debts.add({
-      id: debtId,
-      name: params.name,
-      type: 'credit_card',
-      totalAmount: 0,
-      currentAmount: 0,
-      linkedAccountId: accountId,
-      bank: params.bank,
-      startDate: params.openedAt,
-      updatedAt: now,
-      synced: false,
-    });
+  // Создаём долг
+  await db.addDebt({
+    id: debtId,
+    name: params.name,
+    type: 'credit_card',
+    totalAmount: debtAmount,
+    currentAmount: debtAmount,
+    linkedAccountId: accountId,
+    bank: params.bank,
+    startDate: params.openedAt,
+    updatedAt: now,
+    synced: false,
+  });
 
-    await db.accounts.add({
-      id: accountId,
-      name: params.name,
-      type: 'credit',
-      balance: params.limit,
-      limit: params.limit,
-      debtId: debtId,
-      bank: params.bank,
-      openedAt: params.openedAt,
-      updatedAt: now,
-      synced: false,
-    });
+  // Создаём счёт с текущим балансом (НЕ с лимитом!)
+  await db.addAccount({
+    id: accountId,
+    name: params.name,
+    type: 'credit',
+    balance: currentBalance,
+    limit: params.limit,
+    debtId: debtId,
+    bank: params.bank,
+    openedAt: params.openedAt,
+    updatedAt: now,
+    synced: false,
   });
 
   return { accountId, debtId };
 }
 
 // ==========================================
-// ПРИМЕНЕНИЕ И ОТМЕНА ЭФФЕКТОВ (ОДНА ФУНКЦИЯ ДЛЯ ВСЕХ)
+// РАССРОЧКА (новый тип счёта)
 // ==========================================
 
-// Применяет эффекты транзакции к балансам
-async function applyTransactionEffects(tx: Transaction) {
+export async function createInstallment(params: {
+  name: string;
+  limit: number;
+  currentBalance?: number;
+  bank: BankType;
+  openedAt: number;
+}): Promise<{ accountId: string; debtId: string }> {
+  const accountId = uuidv4();
+  const debtId = uuidv4();
   const now = Date.now();
   
+  // Рассчитываем долг как разницу между лимитом и текущим балансом
+  const currentBalance = params.currentBalance ?? params.limit;
+  const debtAmount = Math.max(0, params.limit - currentBalance);
+
+  // Создаём долг типа installment
+  await db.addDebt({
+    id: debtId,
+    name: params.name,
+    type: 'installment',
+    totalAmount: debtAmount,
+    currentAmount: debtAmount,
+    linkedAccountId: accountId,
+    bank: params.bank,
+    startDate: params.openedAt,
+    updatedAt: now,
+    synced: false,
+  });
+
+  // Создаём счёт типа installment
+  await db.addAccount({
+    id: accountId,
+    name: params.name,
+    type: 'installment',
+    balance: currentBalance,
+    limit: params.limit,
+    debtId: debtId,
+    bank: params.bank,
+    openedAt: params.openedAt,
+    updatedAt: now,
+    synced: false,
+  });
+
+  return { accountId, debtId };
+}
+
+// ==========================================
+// ПРИМЕНЕНИЕ И ОТМЕНА ЭФФЕКТОВ
+// ==========================================
+
+async function applyTransactionEffects(tx: Transaction): Promise<void> {
   switch (tx.type) {
     case 'expense': {
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance -= tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
           
           if (acc.type === 'credit' && acc.debtId) {
-            const debt = await db.debts.get(acc.debtId);
+            const debt = await db.getDebtById(acc.debtId);
             if (debt) {
-              debt.currentAmount += tx.amount;
-              debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
-              debt.updatedAt = now;
-              await db.debts.put(debt);
+              await db.updateDebt(debt.id, {
+                currentAmount: debt.currentAmount + tx.amount,
+                totalAmount: Math.max(debt.totalAmount, debt.currentAmount + tx.amount)
+              });
             }
           }
         }
@@ -2211,85 +2442,74 @@ async function applyTransactionEffects(tx: Transaction) {
     }
     case 'income': {
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance += tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
         }
       }
       break;
     }
     case 'transfer': {
       if (tx.fromAccountId && tx.toAccountId) {
-        const fromAcc = await db.accounts.get(tx.fromAccountId);
-        const toAcc = await db.accounts.get(tx.toAccountId);
+        const fromAcc = await db.getAccountById(tx.fromAccountId);
+        const toAcc = await db.getAccountById(tx.toAccountId);
         
         if (fromAcc && toAcc) {
-          fromAcc.balance -= tx.amount;
-          fromAcc.updatedAt = now;
-          await db.accounts.put(fromAcc);
-          
-          toAcc.balance += tx.amount;
-          toAcc.updatedAt = now;
-          await db.accounts.put(toAcc);
+          await db.updateAccount(fromAcc.id, { balance: fromAcc.balance - tx.amount });
+          await db.updateAccount(toAcc.id, { balance: toAcc.balance + tx.amount });
         }
       }
       break;
     }
     case 'debt_payment': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: Math.max(0, debt.currentAmount - tx.amount)
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.min(acc.limit || 0, acc.balance + tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.min(acc.limit || 0, acc.balance + tx.amount)
+              });
             }
           }
         }
       }
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance -= tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
         }
       }
       break;
     }
     case 'debt_borrow': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount += tx.amount;
-          debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: debt.currentAmount + tx.amount,
+            totalAmount: Math.max(debt.totalAmount, debt.currentAmount + tx.amount)
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.max(-(acc.limit || 0), acc.balance - tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount)
+              });
             }
           }
         }
       }
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance += tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
         }
       }
       break;
@@ -2297,25 +2517,20 @@ async function applyTransactionEffects(tx: Transaction) {
   }
 }
 
-// Отменяет эффекты транзакции (обратная операция)
-async function reverseTransactionEffects(tx: Transaction) {
-  const now = Date.now();
-  
+async function reverseTransactionEffects(tx: Transaction): Promise<void> {
   switch (tx.type) {
     case 'expense': {
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance += tx.amount; // Возвращаем
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
           
           if (acc.type === 'credit' && acc.debtId) {
-            const debt = await db.debts.get(acc.debtId);
+            const debt = await db.getDebtById(acc.debtId);
             if (debt) {
-              debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
-              debt.updatedAt = now;
-              await db.debts.put(debt);
+              await db.updateDebt(debt.id, {
+                currentAmount: Math.max(0, debt.currentAmount - tx.amount)
+              });
             }
           }
         }
@@ -2324,84 +2539,73 @@ async function reverseTransactionEffects(tx: Transaction) {
     }
     case 'income': {
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance -= tx.amount; // Забираем
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
         }
       }
       break;
     }
     case 'transfer': {
       if (tx.fromAccountId && tx.toAccountId) {
-        const fromAcc = await db.accounts.get(tx.fromAccountId);
-        const toAcc = await db.accounts.get(tx.toAccountId);
+        const fromAcc = await db.getAccountById(tx.fromAccountId);
+        const toAcc = await db.getAccountById(tx.toAccountId);
         
         if (fromAcc && toAcc) {
-          fromAcc.balance += tx.amount;
-          fromAcc.updatedAt = now;
-          await db.accounts.put(fromAcc);
-          
-          toAcc.balance -= tx.amount;
-          toAcc.updatedAt = now;
-          await db.accounts.put(toAcc);
+          await db.updateAccount(fromAcc.id, { balance: fromAcc.balance + tx.amount });
+          await db.updateAccount(toAcc.id, { balance: toAcc.balance - tx.amount });
         }
       }
       break;
     }
     case 'debt_payment': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount += tx.amount; // Возвращаем долг
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: debt.currentAmount + tx.amount
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.max(-(acc.limit || 0), acc.balance - tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount)
+              });
             }
           }
         }
       }
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance += tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
         }
       }
       break;
     }
     case 'debt_borrow': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: Math.max(0, debt.currentAmount - tx.amount)
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.min(acc.limit || 0, acc.balance + tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.min(acc.limit || 0, acc.balance + tx.amount)
+              });
             }
           }
         }
       }
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance -= tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
         }
       }
       break;
@@ -2427,10 +2631,8 @@ export async function createTransactionWithEffects(
     synced: false,
   };
 
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await db.transactions.add(transaction);
-    await applyTransactionEffects(transaction);
-  });
+  await db.addTransaction(transaction);
+  await applyTransactionEffects(transaction);
 
   return txId;
 }
@@ -2439,130 +2641,207 @@ export async function createTransactionWithEffects(
 // РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ
 // ==========================================
 
-export async function updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>) {
-  await db.accounts.update(id, {
-    ...data,
-    updatedAt: Date.now(),
-    synced: false,
-  });
+export async function updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
+  await db.updateAccount(id, data);
 }
 
-export async function deleteAccount(id: string) {
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    const acc = await db.accounts.get(id);
-    
-    if (acc) {
-      // Если это кредитка — удаляем связанный долг
-      if (acc.type === 'credit' && acc.debtId) {
-        // Сначала удаляем все транзакции, связанные с долгом
-        await db.transactions.where('debtId').equals(acc.debtId).delete();
-        // Удаляем сам долг
-        await db.debts.delete(acc.debtId);
+export async function deleteAccount(id: string): Promise<void> {
+  const acc = await db.getAccountById(id);
+  if (acc) {
+    // Если это кредитка/рассрочка — удаляем связанный долг
+    if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
+      const transactions = await db.getTransactions();
+      for (const tx of transactions) {
+        if (tx.debtId === acc.debtId) {
+          await db.deleteTransaction(tx.id);
+        }
       }
-      
-      // Удаляем все транзакции, связанные со счётом
-      await db.transactions.where('fromAccountId').equals(id).delete();
-      await db.transactions.where('toAccountId').equals(id).delete();
-      
-      // Удаляем сам счёт
-      await db.accounts.delete(id);
+      await db.deleteDebt(acc.debtId);
     }
-  });
-}
-
-export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>) {
-  await db.debts.update(id, {
-    ...data,
-    updatedAt: Date.now(),
-    synced: false,
-  });
-}
-
-export async function deleteDebt(id: string) {
-  await db.transaction('rw', db.debts, db.accounts, db.transactions, async () => {
-    const debt = await db.debts.get(id);
     
-    if (debt) {
-      // Если это долг кредитной карты — удаляем связанный счёт
-      if (debt.type === 'credit_card' && debt.linkedAccountId) {
-        // Сначала удаляем все транзакции, связанные со счётом
-        await db.transactions.where('fromAccountId').equals(debt.linkedAccountId).delete();
-        await db.transactions.where('toAccountId').equals(debt.linkedAccountId).delete();
-        // Удаляем сам счёт
-        await db.accounts.delete(debt.linkedAccountId);
+    const transactions = await db.getTransactions();
+    for (const tx of transactions) {
+      if (tx.fromAccountId === id || tx.toAccountId === id) {
+        await db.deleteTransaction(tx.id);
       }
-      
-      // Удаляем все транзакции, связанные с долгом
-      await db.transactions.where('debtId').equals(id).delete();
-      
-      // Удаляем сам долг
-      await db.debts.delete(id);
     }
-  });
+    
+    await db.deleteAccount(id);
+  }
 }
 
-export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>) {
-  const oldTx = await db.transactions.get(id);
+export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
+  await db.updateDebt(id, data);
+}
+
+export async function deleteDebt(id: string): Promise<void> {
+  const debt = await db.getDebtById(id);
+  if (debt) {
+    // Если это долг кредитки/рассрочки — удаляем связанный счёт
+    if ((debt.type === 'credit_card' || debt.type === 'installment') && debt.linkedAccountId) {
+      const transactions = await db.getTransactions();
+      for (const tx of transactions) {
+        if (tx.fromAccountId === debt.linkedAccountId || tx.toAccountId === debt.linkedAccountId) {
+          await db.deleteTransaction(tx.id);
+        }
+      }
+      await db.deleteAccount(debt.linkedAccountId);
+    }
+    
+    const transactions = await db.getTransactions();
+    for (const tx of transactions) {
+      if (tx.debtId === id) {
+        await db.deleteTransaction(tx.id);
+      }
+    }
+    
+    await db.deleteDebt(id);
+  }
+}
+
+export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>): Promise<void> {
+  const oldTx = await db.getTransactionById(id);
   if (!oldTx) return;
 
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await reverseTransactionEffects(oldTx);
-    
-    const updatedTx: Transaction = { 
-      ...oldTx, 
-      ...newData, 
-      updatedAt: Date.now(),
-      synced: false 
-    };
-    await db.transactions.put(updatedTx);
-    
+  await reverseTransactionEffects(oldTx);
+  await db.updateTransaction(id, newData);
+  
+  const updatedTx = await db.getTransactionById(id);
+  if (updatedTx) {
     await applyTransactionEffects(updatedTx);
-  });
+  }
 }
 
-export async function deleteTransaction(id: string) {
-  const tx = await db.transactions.get(id);
+export async function deleteTransaction(id: string): Promise<void> {
+  const tx = await db.getTransactionById(id);
   if (!tx) return;
 
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await reverseTransactionEffects(tx);
-    await db.transactions.delete(id);
-  });
+  await reverseTransactionEffects(tx);
+  await db.deleteTransaction(id);
 }
 
-export async function linkCreditCardToDebt(accountId: string, debtId: string) {
-  await db.transaction('rw', db.accounts, db.debts, async () => {
-    const acc = await db.accounts.get(accountId);
-    const debt = await db.debts.get(debtId);
-    
-    if (acc && debt) {
-      acc.debtId = debtId;
-      debt.linkedAccountId = accountId;
-      await db.accounts.put(acc);
-      await db.debts.put(debt);
-    }
-  });
+export async function linkCreditCardToDebt(accountId: string, debtId: string): Promise<void> {
+  const acc = await db.getAccountById(accountId);
+  const debt = await db.getDebtById(debtId);
+  
+  if (acc && debt) {
+    await db.updateAccount(accountId, { debtId });
+    await db.updateDebt(debtId, { linkedAccountId: accountId });
+  }
 }
+
+// ==========================================
+// ЭКСПОРТ/ИМПОРТ
+// ==========================================
 
 export async function exportData(): Promise<string> {
-  const accounts = await db.accounts.toArray();
-  const debts = await db.debts.toArray();
-  const transactions = await db.transactions.toArray();
-  
-  return JSON.stringify({ accounts, debts, transactions, exportedAt: Date.now() });
+  return await db.exportData();
 }
 
 export async function importData(json: string): Promise<void> {
-  const data = JSON.parse(json);
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await db.accounts.clear();
-    await db.debts.clear();
-    await db.transactions.clear();
-    
-    await db.accounts.bulkAdd(data.accounts);
-    await db.debts.bulkAdd(data.debts);
-    await db.transactions.bulkAdd(data.transactions);
-  });
+  await db.importData(json);
+}
+
+
+─────────────────────────────────────────
+FILE: hooks\useDatabase.ts
+─────────────────────────────────────────
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { getDatabase, Account, Debt, Transaction } from "@/lib/database";
+
+export function useDatabase() {
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isReady, setIsReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const db = getDatabase();
+
+  // Загрузка всех данных
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [accs, dts, txs] = await Promise.all([
+        db.getAccounts(),
+        db.getDebts(),
+        db.getTransactions(),
+      ]);
+      setAccounts(accs);
+      setDebts(dts);
+      setTransactions(txs);
+    } catch (error) {
+      console.error("Ошибка загрузки данных:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Инициализация при монтировании
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await db.init();
+        await refresh();
+        setIsReady(true);
+      } catch (error) {
+        console.error("Ошибка инициализации БД:", error);
+        setIsReady(true); // Всё равно показываем UI, чтобы видеть ошибки
+      }
+    };
+    init();
+  }, []);
+
+  return {
+    accounts,
+    debts,
+    transactions,
+    isReady,
+    isLoading,
+    refresh,
+  };
+}
+
+
+─────────────────────────────────────────
+FILE: hooks\useDeviceInfo.ts
+─────────────────────────────────────────
+"use client";
+
+import { useState, useEffect } from "react";
+import { Device } from "@capacitor/device";
+
+export interface DeviceInfo {
+  model: string;
+  platform: string;
+  operatingSystem: string;
+  osVersion: string;
+}
+
+export function useDeviceInfo(): DeviceInfo | null {
+  const [info, setInfo] = useState<DeviceInfo | null>(null);
+
+  useEffect(() => {
+    const getDevice = async () => {
+      try {
+        const deviceInfo = await Device.getInfo();
+        setInfo({
+          model: deviceInfo.model || "Unknown",
+          platform: deviceInfo.platform || "unknown",
+          operatingSystem: deviceInfo.operatingSystem || "unknown",
+          osVersion: deviceInfo.osVersion || "unknown",
+        });
+      } catch (error) {
+        console.error("Ошибка получения информации об устройстве:", error);
+      }
+    };
+
+    getDevice();
+  }, []);
+
+  return info;
 }
 
 
@@ -2614,6 +2893,145 @@ export function useOnlineStatus() {
 
 
 ─────────────────────────────────────────
+FILE: hooks\useStorageInfo.ts
+─────────────────────────────────────────
+"use client";
+
+import { useState, useEffect } from "react";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+
+export interface StorageStatus {
+  dbSize: number;
+  freeSpace: number;
+  dbSizeStatus: "success" | "warning" | "error";
+  freeSpaceStatus: "success" | "warning" | "error";
+  storageHealthStatus: "success" | "warning" | "error";
+  writeStatus: "success" | "warning" | "error";
+  dbSizeText: string;
+  freeSpaceText: string;
+  storageHealthText: string;
+  writeStatusText: string;
+}
+
+export function useStorageInfo(): StorageStatus | null {
+  const [status, setStatus] = useState<StorageStatus | null>(null);
+
+  useEffect(() => {
+    const checkStorage = async () => {
+      try {
+        // Получаем размер файла БД
+        let dbSize = 0;
+        try {
+          const stat = await Filesystem.stat({
+            directory: Directory.Data,
+            path: "databases/finance.db",
+          });
+          dbSize = stat.size || 0;
+        } catch (e) {
+          console.log("БД ещё не создана или файл не найден");
+        }
+
+        // Получаем свободное место через navigator.storage
+        let freeSpace = 0;
+        if ("storage" in navigator && "estimate" in navigator.storage) {
+          const estimate = await navigator.storage.estimate();
+          freeSpace = (estimate.quota || 0) - (estimate.usage || 0);
+        }
+
+        // Статус размера БД
+        let dbSizeStatus: "success" | "warning" | "error" = "success";
+        let dbSizeText = "";
+        const dbSizeMB = dbSize / (1024 * 1024);
+        const dbSizeGB = dbSize / (1024 * 1024 * 1024);
+
+        if (dbSizeGB > 5) {
+          dbSizeStatus = "error";
+          dbSizeText = `Критически большой размер: ${dbSizeGB.toFixed(2)} ГБ`;
+        } else if (dbSizeGB > 1) {
+          dbSizeStatus = "warning";
+          dbSizeText = `Большой размер: ${dbSizeGB.toFixed(2)} ГБ`;
+        } else if (dbSizeMB > 0) {
+          dbSizeStatus = "success";
+          dbSizeText = `Размер: ${dbSizeMB.toFixed(2)} МБ`;
+        } else {
+          dbSizeStatus = "success";
+          dbSizeText = "База данных пуста или не создана";
+        }
+
+        // Статус свободного места
+        let freeSpaceStatus: "success" | "warning" | "error" = "success";
+        let freeSpaceText = "";
+        const freeSpaceGB = freeSpace / (1024 * 1024 * 1024);
+        const freeSpaceMB = freeSpace / (1024 * 1024);
+
+        if (freeSpaceMB < 100) {
+          freeSpaceStatus = "error";
+          freeSpaceText = `Критически мало: ${freeSpaceMB.toFixed(0)} МБ`;
+        } else if (freeSpaceGB < 5) {
+          freeSpaceStatus = "warning";
+          freeSpaceText = `Мало места: ${freeSpaceGB.toFixed(2)} ГБ`;
+        } else {
+          freeSpaceStatus = "success";
+          freeSpaceText = `Достаточно: ${freeSpaceGB.toFixed(2)} ГБ`;
+        }
+
+        // Статус здоровья хранилища
+        let storageHealthStatus: "success" | "warning" | "error" = "success";
+        let storageHealthText = "";
+        const difference = freeSpace - dbSize;
+        const differenceMB = difference / (1024 * 1024);
+
+        if (differenceMB < 100) {
+          storageHealthStatus = "error";
+          storageHealthText = `Критически мало места (разница ${differenceMB.toFixed(0)} МБ)`;
+        } else if (freeSpaceGB < 5) {
+          storageHealthStatus = "warning";
+          storageHealthText = `Место может скоро закончиться`;
+        } else {
+          storageHealthStatus = "success";
+          storageHealthText = "Хранилище в хорошем состоянии";
+        }
+
+        // Статус записи в БД
+        let writeStatus: "success" | "warning" | "error" = "success";
+        let writeStatusText = "";
+
+        if (freeSpaceMB < 100) {
+          writeStatus = "error";
+          writeStatusText = "Критически мало места! Запись может остановиться";
+        } else if (freeSpaceMB < 250) {
+          writeStatus = "warning";
+          writeStatusText = "Внимание: скоро база данных остановится";
+        } else {
+          writeStatus = "success";
+          writeStatusText = "Запись работает нормально";
+        }
+
+        setStatus({
+          dbSize,
+          freeSpace,
+          dbSizeStatus,
+          freeSpaceStatus,
+          storageHealthStatus,
+          writeStatus,
+          dbSizeText,
+          freeSpaceText,
+          storageHealthText,
+          writeStatusText,
+        });
+      } catch (error) {
+        console.error("Ошибка проверки хранилища:", error);
+      }
+    };
+
+    checkStorage();
+  }, []);
+
+  return status;
+}
+
+
+─────────────────────────────────────────
 FILE: lib\categories.ts
 ─────────────────────────────────────────
 export type CategoryType = 'income' | 'expense';
@@ -2647,6 +3065,662 @@ export const DEFAULT_CATEGORIES: Category[] = [
 
 export function getCategoryById(id: string): Category | undefined {
   return DEFAULT_CATEGORIES.find(c => c.id === id);
+}
+
+
+─────────────────────────────────────────
+FILE: lib\database.ts
+─────────────────────────────────────────
+import { CapacitorSQLite, SQLiteDBConnection, SQLiteConnection } from '@capacitor-community/sqlite';
+
+// Интерфейс, который будет работать везде (Capacitor, Tauri, Web)
+export interface Database {
+  init(): Promise<void>;
+  close(): Promise<void>;
+  
+  // Accounts
+  getAccounts(): Promise<Account[]>;
+  getAccountById(id: string): Promise<Account | undefined>;
+  addAccount(account: Account): Promise<void>;
+  updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>): Promise<void>;
+  deleteAccount(id: string): Promise<void>;
+  
+  // Debts
+  getDebts(): Promise<Debt[]>;
+  getDebtById(id: string): Promise<Debt | undefined>;
+  addDebt(debt: Debt): Promise<void>;
+  updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>): Promise<void>;
+  deleteDebt(id: string): Promise<void>;
+  
+  // Transactions
+  getTransactions(): Promise<Transaction[]>;
+  getTransactionById(id: string): Promise<Transaction | undefined>;
+  addTransaction(transaction: Transaction): Promise<void>;
+  updateTransaction(id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>): Promise<void>;
+  deleteTransaction(id: string): Promise<void>;
+  
+  // Bulk operations
+  exportData(): Promise<string>;
+  importData(json: string): Promise<void>;
+}
+
+// Типы данных (те же, что были в db/index.ts)
+export type BankType = 'sber' | 'tbank' | 'other' | 'person';
+
+export interface Account {
+  id: string;
+  name: string;
+  type: 'debit' | 'credit' | 'cash' | 'installment';
+  balance: number;
+  limit?: number;
+  debtId?: string;
+  bank?: BankType;
+  openedAt?: number;
+  updatedAt: number;
+  synced: boolean;
+}
+
+export interface Debt {
+  id: string;
+  name: string;
+  type: 'bank_loan' | 'person' | 'installment' | 'credit_card';
+  totalAmount: number;
+  currentAmount: number;
+  interestRate?: number;
+  linkedAccountId?: string;
+  bank?: BankType;
+  startDate?: number;
+  termMonths?: number;
+  updatedAt: number;
+  synced: boolean;
+}
+
+export type TransactionType = 'income' | 'expense' | 'transfer' | 'debt_payment' | 'debt_borrow';
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  amount: number;
+  fromAccountId?: string;
+  toAccountId?: string;
+  debtId?: string;
+  categoryId?: string;
+  description?: string;
+  date: number;
+  createdAt: number;
+  updatedAt: number;
+  synced: boolean;
+}
+
+// Реализация для Capacitor (Android/iOS)
+export class CapacitorDatabase implements Database {
+  private sqlite: SQLiteConnection;
+  private db: SQLiteDBConnection | null = null;
+  private dbName = 'finance';
+
+  constructor() {
+    this.sqlite = new SQLiteConnection(CapacitorSQLite);
+  }
+
+  async init(): Promise<void> {
+    try {
+      // Проверяем, существует ли уже соединение
+      const ret = await this.sqlite.checkConnectionsConsistency();
+      const isConn = (await this.sqlite.isConnection(this.dbName, false)).result;
+      
+      if (ret.result && isConn) {
+        // Соединение уже существует
+        this.db = await this.sqlite.retrieveConnection(this.dbName, false);
+      } else {
+        // Создаём новое соединение
+        this.db = await this.sqlite.createConnection(this.dbName, false, 'no-encryption', 1, false);
+      }
+      
+      await this.db.open();
+      
+      // Создаём таблицы
+      await this.createTables();
+    } catch (error) {
+      console.error('Ошибка инициализации БД:', error);
+      throw error;
+    }
+  }
+
+  private async createTables(): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS accounts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        balance REAL NOT NULL,
+        "limit" REAL,
+        debtId TEXT,
+        bank TEXT,
+        openedAt INTEGER,
+        updatedAt INTEGER NOT NULL,
+        synced INTEGER NOT NULL
+      )
+    `);
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS debts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        totalAmount REAL NOT NULL,
+        currentAmount REAL NOT NULL,
+        interestRate REAL,
+        linkedAccountId TEXT,
+        bank TEXT,
+        startDate INTEGER,
+        termMonths INTEGER,
+        updatedAt INTEGER NOT NULL,
+        synced INTEGER NOT NULL
+      )
+    `);
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        fromAccountId TEXT,
+        toAccountId TEXT,
+        debtId TEXT,
+        categoryId TEXT,
+        description TEXT,
+        date INTEGER NOT NULL,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL,
+        synced INTEGER NOT NULL
+      )
+    `);
+
+    // Создаём индексы для ускорения запросов
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_accounts_debtId ON accounts(debtId)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_debts_type ON debts(type)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_debts_linkedAccountId ON debts(linkedAccountId)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_fromAccountId ON transactions(fromAccountId)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_toAccountId ON transactions(toAccountId)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_debtId ON transactions(debtId)`);
+    await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_categoryId ON transactions(categoryId)`);
+  }
+
+  async close(): Promise<void> {
+    if (this.db) {
+      await this.db.close();
+      this.db = null;
+    }
+  }
+
+  // ========== ACCOUNTS ==========
+
+  async getAccounts(): Promise<Account[]> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const result = await this.db.query('SELECT * FROM accounts ORDER BY updatedAt DESC');
+    return (result.values || []).map(this.mapAccountFromDB);
+  }
+
+  async getAccountById(id: string): Promise<Account | undefined> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const result = await this.db.query('SELECT * FROM accounts WHERE id = ?', [id]);
+    return result.values && result.values.length > 0 ? this.mapAccountFromDB(result.values[0]) : undefined;
+  }
+
+  async addAccount(account: Account): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    await this.db.run(
+      `INSERT INTO accounts (id, name, type, balance, "limit", debtId, bank, openedAt, updatedAt, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        account.id,
+        account.name,
+        account.type,
+        account.balance,
+        account.limit || null,
+        account.debtId || null,
+        account.bank || null,
+        account.openedAt || null,
+        account.updatedAt,
+        account.synced ? 1 : 0
+      ]
+    );
+  }
+
+  async updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const updates: string[] = [];
+    const values: any[] = [];
+    
+    if (data.name !== undefined) {
+      updates.push('name = ?');
+      values.push(data.name);
+    }
+    if (data.type !== undefined) {
+      updates.push('type = ?');
+      values.push(data.type);
+    }
+    if (data.balance !== undefined) {
+      updates.push('balance = ?');
+      values.push(data.balance);
+    }
+    if (data.limit !== undefined) {
+      updates.push('"limit" = ?');
+      values.push(data.limit);
+    }
+    if (data.debtId !== undefined) {
+      updates.push('debtId = ?');
+      values.push(data.debtId);
+    }
+    if (data.bank !== undefined) {
+      updates.push('bank = ?');
+      values.push(data.bank);
+    }
+    if (data.openedAt !== undefined) {
+      updates.push('openedAt = ?');
+      values.push(data.openedAt);
+    }
+    
+    if (updates.length > 0) {
+      updates.push('updatedAt = ?');
+      values.push(Date.now());
+      
+      values.push(id);
+      
+      await this.db.run(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, values);
+    }
+  }
+
+  async deleteAccount(id: string): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    await this.db.run('DELETE FROM accounts WHERE id = ?', [id]);
+  }
+
+  private mapAccountFromDB(row: any): Account {
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      balance: row.balance,
+      limit: row.limit || row["limit"] || undefined,
+      debtId: row.debtId || undefined,
+      bank: row.bank || undefined,
+      openedAt: row.openedAt || undefined,
+      updatedAt: row.updatedAt,
+      synced: row.synced === 1
+    };
+  }
+
+  // ========== DEBTS ==========
+
+  async getDebts(): Promise<Debt[]> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const result = await this.db.query('SELECT * FROM debts ORDER BY updatedAt DESC');
+    return (result.values || []).map(this.mapDebtFromDB);
+  }
+
+  async getDebtById(id: string): Promise<Debt | undefined> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const result = await this.db.query('SELECT * FROM debts WHERE id = ?', [id]);
+    return result.values && result.values.length > 0 ? this.mapDebtFromDB(result.values[0]) : undefined;
+  }
+
+  async addDebt(debt: Debt): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    await this.db.run(
+      `INSERT INTO debts (id, name, type, totalAmount, currentAmount, interestRate, linkedAccountId, bank, startDate, termMonths, updatedAt, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        debt.id,
+        debt.name,
+        debt.type,
+        debt.totalAmount,
+        debt.currentAmount,
+        debt.interestRate || null,
+        debt.linkedAccountId || null,
+        debt.bank || null,
+        debt.startDate || null,
+        debt.termMonths || null,
+        debt.updatedAt,
+        debt.synced ? 1 : 0
+      ]
+    );
+  }
+
+  async updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const updates: string[] = [];
+    const values: any[] = [];
+    
+    if (data.name !== undefined) {
+      updates.push('name = ?');
+      values.push(data.name);
+    }
+    if (data.type !== undefined) {
+      updates.push('type = ?');
+      values.push(data.type);
+    }
+    if (data.totalAmount !== undefined) {
+      updates.push('totalAmount = ?');
+      values.push(data.totalAmount);
+    }
+    if (data.currentAmount !== undefined) {
+      updates.push('currentAmount = ?');
+      values.push(data.currentAmount);
+    }
+    if (data.interestRate !== undefined) {
+      updates.push('interestRate = ?');
+      values.push(data.interestRate);
+    }
+    if (data.linkedAccountId !== undefined) {
+      updates.push('linkedAccountId = ?');
+      values.push(data.linkedAccountId);
+    }
+    if (data.bank !== undefined) {
+      updates.push('bank = ?');
+      values.push(data.bank);
+    }
+    if (data.startDate !== undefined) {
+      updates.push('startDate = ?');
+      values.push(data.startDate);
+    }
+    if (data.termMonths !== undefined) {
+      updates.push('termMonths = ?');
+      values.push(data.termMonths);
+    }
+    
+    if (updates.length > 0) {
+      updates.push('updatedAt = ?');
+      values.push(Date.now());
+      
+      values.push(id);
+      
+      await this.db.run(`UPDATE debts SET ${updates.join(', ')} WHERE id = ?`, values);
+    }
+  }
+
+  async deleteDebt(id: string): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    await this.db.run('DELETE FROM debts WHERE id = ?', [id]);
+  }
+
+  private mapDebtFromDB(row: any): Debt {
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      totalAmount: row.totalAmount,
+      currentAmount: row.currentAmount,
+      interestRate: row.interestRate || undefined,
+      linkedAccountId: row.linkedAccountId || undefined,
+      bank: row.bank || undefined,
+      startDate: row.startDate || undefined,
+      termMonths: row.termMonths || undefined,
+      updatedAt: row.updatedAt,
+      synced: row.synced === 1
+    };
+  }
+
+  // ========== TRANSACTIONS ==========
+
+  async getTransactions(): Promise<Transaction[]> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const result = await this.db.query('SELECT * FROM transactions ORDER BY date DESC');
+    return (result.values || []).map(this.mapTransactionFromDB);
+  }
+
+  async getTransactionById(id: string): Promise<Transaction | undefined> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const result = await this.db.query('SELECT * FROM transactions WHERE id = ?', [id]);
+    return result.values && result.values.length > 0 ? this.mapTransactionFromDB(result.values[0]) : undefined;
+  }
+
+  async addTransaction(transaction: Transaction): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    await this.db.run(
+      `INSERT INTO transactions (id, type, amount, fromAccountId, toAccountId, debtId, categoryId, description, date, createdAt, updatedAt, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        transaction.id,
+        transaction.type,
+        transaction.amount,
+        transaction.fromAccountId || null,
+        transaction.toAccountId || null,
+        transaction.debtId || null,
+        transaction.categoryId || null,
+        transaction.description || null,
+        transaction.date,
+        transaction.createdAt,
+        transaction.updatedAt,
+        transaction.synced ? 1 : 0
+      ]
+    );
+  }
+
+  async updateTransaction(id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const updates: string[] = [];
+    const values: any[] = [];
+    
+    if (data.type !== undefined) {
+      updates.push('type = ?');
+      values.push(data.type);
+    }
+    if (data.amount !== undefined) {
+      updates.push('amount = ?');
+      values.push(data.amount);
+    }
+    if (data.fromAccountId !== undefined) {
+      updates.push('fromAccountId = ?');
+      values.push(data.fromAccountId);
+    }
+    if (data.toAccountId !== undefined) {
+      updates.push('toAccountId = ?');
+      values.push(data.toAccountId);
+    }
+    if (data.debtId !== undefined) {
+      updates.push('debtId = ?');
+      values.push(data.debtId);
+    }
+    if (data.categoryId !== undefined) {
+      updates.push('categoryId = ?');
+      values.push(data.categoryId);
+    }
+    if (data.description !== undefined) {
+      updates.push('description = ?');
+      values.push(data.description);
+    }
+    if (data.date !== undefined) {
+      updates.push('date = ?');
+      values.push(data.date);
+    }
+    
+    if (updates.length > 0) {
+      updates.push('updatedAt = ?');
+      values.push(Date.now());
+      
+      values.push(id);
+      
+      await this.db.run(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ?`, values);
+    }
+  }
+
+  async deleteTransaction(id: string): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    await this.db.run('DELETE FROM transactions WHERE id = ?', [id]);
+  }
+
+  private mapTransactionFromDB(row: any): Transaction {
+    return {
+      id: row.id,
+      type: row.type,
+      amount: row.amount,
+      fromAccountId: row.fromAccountId || undefined,
+      toAccountId: row.toAccountId || undefined,
+      debtId: row.debtId || undefined,
+      categoryId: row.categoryId || undefined,
+      description: row.description || undefined,
+      date: row.date,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      synced: row.synced === 1
+    };
+  }
+
+  // ========== EXPORT/IMPORT ==========
+
+  async exportData(): Promise<string> {
+    const accounts = await this.getAccounts();
+    const debts = await this.getDebts();
+    const transactions = await this.getTransactions();
+    
+    return JSON.stringify({ accounts, debts, transactions, exportedAt: Date.now() });
+  }
+
+  async importData(json: string): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    const data = JSON.parse(json);
+    
+    await this.db.execute('BEGIN TRANSACTION');
+    
+    try {
+      await this.db.execute('DELETE FROM transactions');
+      await this.db.execute('DELETE FROM debts');
+      await this.db.execute('DELETE FROM accounts');
+      
+      for (const account of data.accounts) {
+        await this.addAccount(account);
+      }
+      
+      for (const debt of data.debts) {
+        await this.addDebt(debt);
+      }
+      
+      for (const transaction of data.transactions) {
+        await this.addTransaction(transaction);
+      }
+      
+      await this.db.execute('COMMIT');
+    } catch (error) {
+      await this.db.execute('ROLLBACK');
+      throw error;
+    }
+  }
+}
+
+// Фабрика: создаём нужную реализацию в зависимости от платформы
+export function createDatabase(): Database {
+  // Пока только Capacitor, потом добавим Tauri
+  return new CapacitorDatabase();
+}
+
+// Экспортируем singleton
+let dbInstance: Database | null = null;
+
+export function getDatabase(): Database {
+  if (!dbInstance) {
+    dbInstance = createDatabase();
+  }
+  return dbInstance;
+}
+
+
+─────────────────────────────────────────
+FILE: lib\migration.ts
+─────────────────────────────────────────
+import Dexie from 'dexie';
+import { getDatabase } from './database';
+
+// Старая схема Dexie (для чтения данных)
+class OldFinanceDB extends Dexie {
+  accounts: Dexie.Table<any, string>;
+  debts: Dexie.Table<any, string>;
+  transactions: Dexie.Table<any, string>;
+
+  constructor() {
+    super('FinanceTrackerDB');
+    this.version(4).stores({
+      accounts: 'id, type, synced, updatedAt, debtId, bank',
+      debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
+      transactions: 'id, fromAccountId, toAccountId, debtId, categoryId, date, type, synced, createdAt'
+    });
+    
+    this.accounts = this.table('accounts');
+    this.debts = this.table('debts');
+    this.transactions = this.table('transactions');
+  }
+}
+
+export async function migrateFromIndexedDB(): Promise<boolean> {
+  try {
+    // Проверяем, есть ли данные в IndexedDB
+    const oldDb = new OldFinanceDB();
+    
+    const accounts = await oldDb.accounts.toArray();
+    const debts = await oldDb.debts.toArray();
+    const transactions = await oldDb.transactions.toArray();
+    
+    // Если данных нет, миграция не нужна
+    if (accounts.length === 0 && debts.length === 0 && transactions.length === 0) {
+      console.log('Нет данных для миграции');
+      return false;
+    }
+    
+    console.log(`Найдено данных для миграции: ${accounts.length} счетов, ${debts.length} долгов, ${transactions.length} транзакций`);
+    
+    // Инициализируем новую БД
+    const newDb = getDatabase();
+    await newDb.init();
+    
+    // Проверяем, есть ли уже данные в SQLite (чтобы не дублировать)
+    const existingAccounts = await newDb.getAccounts();
+    if (existingAccounts.length > 0) {
+      console.log('Данные уже есть в SQLite, миграция пропущена');
+      return false;
+    }
+    
+    // Переносим данные
+    for (const account of accounts) {
+      await newDb.addAccount(account);
+    }
+    
+    for (const debt of debts) {
+      await newDb.addDebt(debt);
+    }
+    
+    for (const transaction of transactions) {
+      await newDb.addTransaction(transaction);
+    }
+    
+    console.log('Миграция завершена успешно');
+    
+    // Очищаем старую БД
+    await oldDb.delete();
+    console.log('Старая IndexedDB удалена');
+    
+    return true;
+  } catch (error) {
+    console.error('Ошибка миграции:', error);
+    return false;
+  }
 }
 
 
@@ -2935,6 +4009,6 @@ export function getChartById(id: string): ChartDefinition | undefined {
 
 
 =============================================
-Обработано файлов: 28
+Обработано файлов: 34
 Пропущено файлов: 1
-Размер экспорта: 115565 байт
+Размер экспорта: 154299 байт

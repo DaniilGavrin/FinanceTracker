@@ -14,13 +14,23 @@ export function AccountItem({ account, onDelete }: Props) {
       <div className="flex-1 min-w-0">
         <p className="font-medium truncate">{account.name}</p>
         <p className="text-xs text-muted-foreground truncate">
-          {account.type === 'debit' ? 'Дебетовая' : account.type === 'credit' ? 'Кредитная' : account.type === 'cash' ? 'Наличные' : account.type}
+          {account.type === 'debit' ? 'Дебетовая' : 
+          account.type === 'credit' ? 'Кредитная' : 
+          account.type === 'installment' ? 'Рассрочка' : 
+          account.type === 'cash' ? 'Наличные' : account.type}
           {bankLabel && ` • ${bankLabel}`}
           {dateLabel && ` • ${dateLabel}`}
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <p className="font-mono text-lg">₽ {account.balance.toLocaleString('ru-RU')}</p>
+        <div className="text-right">
+          <p className="font-mono text-lg">₽ {account.balance.toLocaleString('ru-RU')}</p>
+          {account.limit !== undefined && (
+            <p className="text-[10px] text-muted-foreground font-mono">
+              из ₽ {account.limit.toLocaleString('ru-RU')}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => onDelete(account.id, account.name)}
           className="text-destructive hover:text-destructive/80 transition-opacity md:opacity-0 md:group-hover:opacity-100"

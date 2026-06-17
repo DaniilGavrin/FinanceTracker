@@ -37,7 +37,7 @@ export type BankType = 'sber' | 'tbank' | 'other' | 'person';
 export interface Account {
   id: string;
   name: string;
-  type: 'debit' | 'credit' | 'cash';
+  type: 'debit' | 'credit' | 'cash' | 'installment';
   balance: number;
   limit?: number;
   debtId?: string;
