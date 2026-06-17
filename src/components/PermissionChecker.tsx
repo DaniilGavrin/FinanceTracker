@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Device } from "@capacitor/device";
 import { LocalNotifications } from "@capacitor/local-notifications";
-import { Camera, CameraPermissionState } from "@capacitor/camera";
+import { Camera } from "@capacitor/camera";
 import { Network } from "@capacitor/network";
 import { BleClient } from "@capacitor-community/bluetooth-le";
 import { App } from "@capacitor/app";
@@ -18,38 +17,18 @@ interface PermissionCheck {
   action?: () => void;
 }
 
-export function PermissionChecker() {
+interface Props {
+  showDeviceInfo?: boolean;
+}
+
+export function PermissionChecker({ showDeviceInfo = true }: Props) {
   const [checks, setChecks] = useState<PermissionCheck[]>([]);
-  const [deviceInfo, setDeviceInfo] = useState<string>("Определяем...");
 
   useEffect(() => {
     const runChecks = async () => {
       const newChecks: PermissionCheck[] = [];
-      let isCapacitor = false;
 
-      // 1. Проверка устройства
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 2000)
-        );
-
-        const info = await Promise.race([
-          Device.getInfo(),
-          timeoutPromise
-        ]) as any;
-
-        setDeviceInfo(`${info.name || info.model || "Устройство"} • ${info.platform?.toUpperCase() || "UNKNOWN"}`);
-        isCapacitor = true;
-      } catch (e) {
-        setDeviceInfo("Веб-браузер");
-      }
-
-      if (!isCapacitor) {
-        setChecks([]);
-        return;
-      }
-
-      // 2. Уведомления
+      // 1. Уведомления
       try {
         const notifResult = await LocalNotifications.checkPermissions();
         const notifStatus: Status =
@@ -64,9 +43,7 @@ export function PermissionChecker() {
             await LocalNotifications.requestPermissions();
             runChecks();
           } : notifStatus === "denied" ? async () => {
-            // Открываем настройки приложения через App plugin
             await App.getInfo();
-            // На Android можно использовать Intent, но проще показать подсказку
             alert("Откройте: Настройки → Приложения → Finance Tracker → Уведомления");
           } : undefined,
         });
@@ -78,7 +55,7 @@ export function PermissionChecker() {
         });
       }
 
-      // 3. Камера
+      // 2. Камера
       try {
         const camResult = await Camera.checkPermissions() as any;
         const camPermission = camResult.camera || "prompt";
@@ -105,7 +82,7 @@ export function PermissionChecker() {
         });
       }
 
-      // 4. Сеть (Wi-Fi / Мобильные данные)
+      // 3. Сеть
       try {
         const networkStatus = await Network.getStatus();
         const isConnected = networkStatus.connected;
@@ -139,7 +116,7 @@ export function PermissionChecker() {
         });
       }
 
-      // 5. Bluetooth
+      // 4. Bluetooth
       try {
         await BleClient.initialize();
         const bleEnabled = await BleClient.isEnabled();
@@ -199,49 +176,38 @@ export function PermissionChecker() {
   };
 
   return (
-    <div className="card space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold flex items-center gap-2">
-          🛡️ Состояние системы
-        </h3>
-        <span className="text-xs font-mono bg-secondary px-2 py-1 rounded text-muted-foreground">
-          {deviceInfo}
-        </span>
-      </div>
-
-      <div className="space-y-3">
-        {checks.map((check, idx) => (
-          <div key={idx} className="flex items-start justify-between p-3 bg-secondary/50 rounded-lg border border-border">
-            <div className="flex-1 pr-4">
-              <p className="font-medium text-sm flex items-center gap-2">
-                {check.name}
-                {getStatusIcon(check.status)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {check.description}
-                {check.detail && (
-                  <span className="ml-1 font-mono text-primary">({check.detail})</span>
-                )}
-              </p>
-
-              {check.status === "denied" && (
-                <p className="text-xs text-destructive mt-2">
-                  Разрешение заблокировано. Откройте настройки приложения.
-                </p>
+    <div className="space-y-3">
+      {checks.map((check, idx) => (
+        <div key={idx} className="flex items-start justify-between p-3 bg-secondary/50 rounded-lg border border-border">
+          <div className="flex-1 pr-4">
+            <p className="font-medium text-sm flex items-center gap-2">
+              {check.name}
+              {getStatusIcon(check.status)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {check.description}
+              {check.detail && (
+                <span className="ml-1 font-mono text-primary">({check.detail})</span>
               )}
-            </div>
+            </p>
 
-            {check.action && (
-              <button
-                onClick={check.action}
-                className="btn-primary text-xs px-3 py-1.5 h-fit whitespace-nowrap"
-              >
-                {getActionLabel(check.status)}
-              </button>
+            {check.status === "denied" && (
+              <p className="text-xs text-destructive mt-2">
+                Разрешение заблокировано. Откройте настройки приложения.
+              </p>
             )}
           </div>
-        ))}
-      </div>
+
+          {check.action && (
+            <button
+              onClick={check.action}
+              className="btn-primary text-xs px-3 py-1.5 h-fit whitespace-nowrap"
+            >
+              {getActionLabel(check.status)}
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

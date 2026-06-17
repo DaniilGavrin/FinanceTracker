@@ -122,7 +122,7 @@ export class CapacitorDatabase implements Database {
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         balance REAL NOT NULL,
-        limit REAL,
+        "limit" REAL,
         debtId TEXT,
         bank TEXT,
         openedAt INTEGER,
@@ -205,7 +205,7 @@ export class CapacitorDatabase implements Database {
     if (!this.db) throw new Error('База данных не инициализирована');
     
     await this.db.run(
-      `INSERT INTO accounts (id, name, type, balance, limit, debtId, bank, openedAt, updatedAt, synced)
+      `INSERT INTO accounts (id, name, type, balance, "limit", debtId, bank, openedAt, updatedAt, synced)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         account.id,
@@ -241,7 +241,7 @@ export class CapacitorDatabase implements Database {
       values.push(data.balance);
     }
     if (data.limit !== undefined) {
-      updates.push('limit = ?');
+      updates.push('"limit" = ?');
       values.push(data.limit);
     }
     if (data.debtId !== undefined) {
@@ -278,7 +278,7 @@ export class CapacitorDatabase implements Database {
       name: row.name,
       type: row.type,
       balance: row.balance,
-      limit: row.limit || undefined,
+      limit: row.limit || row["limit"] || undefined,
       debtId: row.debtId || undefined,
       bank: row.bank || undefined,
       openedAt: row.openedAt || undefined,

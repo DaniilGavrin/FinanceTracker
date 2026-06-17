@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, TransactionType } from "@/db";
-import { createTransactionWithEffects } from "@/db";
+import { useDatabase } from "@/hooks/useDatabase";
+import { createTransactionWithEffects, TransactionType } from "@/db";
 import { DEFAULT_CATEGORIES, Category } from "@/lib/categories";
 
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
@@ -16,8 +15,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categoryId, setCategoryId] = useState("");
 
-  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
-  const debts = useLiveQuery(() => db.debts.toArray(), []);
+  const { accounts, debts } = useDatabase();
 
   const allAccounts = accounts || [];
 
