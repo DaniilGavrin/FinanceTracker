@@ -249,7 +249,7 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
         if (acc) {
           await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
           
-          if (acc.type === 'credit' && acc.debtId) {
+          if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
             const debt = await db.getDebtById(acc.debtId);
             if (debt) {
               await db.updateDebt(debt.id, {
