@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useDatabase } from "@/hooks/useDatabase";
-import { deleteAccount, deleteDebt, deleteTransaction } from "@/db";
+import { deleteDebt } from "@/db";
 import { migrateFromIndexedDB } from "@/lib/migration";
 
 import { AddAccountForm } from "@/components/AddAccountForm";
@@ -14,6 +14,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 
 import { HomeView } from "@/components/views/HomeView";
 import { AccountsView } from "@/components/views/AccountsView";
+import { AccountDetailView } from "@/components/views/AccountDetailView";
 import { TransactionsView } from "@/components/views/TransactionsView";
 import { SettingsView } from "@/components/views/SettingsView";
 
@@ -22,6 +23,7 @@ type Tab = "home" | "accounts" | "transactions" | "settings";
 export default function Home() {
   const { accounts, debts, transactions, isReady, refresh } = useDatabase();
   const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [migrationDone, setMigrationDone] = useState(false);
   
   // Модалки
@@ -29,7 +31,7 @@ export default function Home() {
   const [showAddDebt, setShowAddDebt] = useState(false);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ type: 'account' | 'debt' | 'transaction'; id: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'debt' | 'transaction'; id: string; name: string } | null>(null);
 
   // Миграция из IndexedDB (один раз)
   useEffect(() => {
@@ -47,28 +49,32 @@ export default function Home() {
     }
   }, [migrationDone, refresh]);
 
+  // Находим выбранный счёт
+  const selectedAccount = useMemo(() => {
+    if (!selectedAccountId || !accounts) return null;
+    return accounts.find(a => a.id === selectedAccountId) || null;
+  }, [selectedAccountId, accounts]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      if (deleteTarget.type === 'account') await deleteAccount(deleteTarget.id);
       if (deleteTarget.type === 'debt') await deleteDebt(deleteTarget.id);
-      if (deleteTarget.type === 'transaction') await deleteTransaction(deleteTarget.id);
-      await refresh(); // Обновляем данные после удаления
+      await refresh();
     } catch (error) {
       console.error('Ошибка удаления:', error);
     }
     setDeleteTarget(null);
   };
 
-  const handleDeleteRequest = (type: 'account' | 'debt' | 'transaction', id: string, name: string) => {
+  const handleDeleteRequest = (type: 'debt' | 'transaction', id: string, name: string) => {
     setDeleteTarget({ type, id, name });
   };
 
-  // Обёртка для обновления данных после добавления
-  const handleDataChanged = () => {
-    refresh();
+  const handleDataChanged = async () => {
+    await refresh();
   };
 
+  // Если БД ещё не готова — показываем загрузку
   if (!isReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -80,6 +86,21 @@ export default function Home() {
     );
   }
 
+  // Если выбран счёт — показываем экран деталей (БЕЗ header и навигации)
+  if (selectedAccount) {
+    return (
+      <AccountDetailView
+        account={selectedAccount}
+        debts={debts}
+        transactions={transactions}
+        allAccounts={accounts}
+        onBack={() => setSelectedAccountId(null)}
+        onDataChanged={handleDataChanged}
+      />
+    );
+  }
+
+  // Основной UI
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Глобальная шапка */}
@@ -104,7 +125,8 @@ export default function Home() {
             debts={debts} 
             onAddAccount={() => setShowAddAccount(true)} 
             onAddDebt={() => setShowAddDebt(true)}
-            onDelete={handleDeleteRequest}
+            onSelectAccount={(id) => setSelectedAccountId(id)}
+            onDeleteDebt={(id, name) => handleDeleteRequest('debt', id, name)}
           />
         )}
         {activeTab === "transactions" && (
@@ -121,7 +143,7 @@ export default function Home() {
       {/* Нижняя навигация */}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Глобальные модалки — передаём onDataChanged для обновления */}
+      {/* Глобальные модалки */}
       {showAddAccount && <AddAccountForm onClose={() => { setShowAddAccount(false); handleDataChanged(); }} />}
       {showAddDebt && <AddDebtForm onClose={() => { setShowAddDebt(false); handleDataChanged(); }} />}
       {showAddTransaction && <AddTransactionForm onClose={() => { setShowAddTransaction(false); handleDataChanged(); }} />}
