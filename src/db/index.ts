@@ -506,3 +506,24 @@ export async function linkCreditCardToDebt(accountId: string, debtId: string) {
     }
   });
 }
+
+export async function exportData(): Promise<string> {
+  const accounts = await db.accounts.toArray();
+  const debts = await db.debts.toArray();
+  const transactions = await db.transactions.toArray();
+  
+  return JSON.stringify({ accounts, debts, transactions, exportedAt: Date.now() });
+}
+
+export async function importData(json: string): Promise<void> {
+  const data = JSON.parse(json);
+  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
+    await db.accounts.clear();
+    await db.debts.clear();
+    await db.transactions.clear();
+    
+    await db.accounts.bulkAdd(data.accounts);
+    await db.debts.bulkAdd(data.debts);
+    await db.transactions.bulkAdd(data.transactions);
+  });
+}

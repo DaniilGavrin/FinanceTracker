@@ -1,0 +1,18 @@
+{
+  "multiCommand.commands": [
+    {
+      "command": "multiCommand.fullAndroidDeploy",
+      "sequence": [
+        "workbench.action.tasks.runTask",
+        {
+          "command": "workbench.action.tasks.runTask",
+          "args": "🔨 Build (Next.js)"
+        },
+        {
+          "command": "workbench.action.tasks.runTask",
+          "args": "📱 Cap Sync"
+        }
+      ]
+    }
+  ]
+}

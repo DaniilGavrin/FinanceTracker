@@ -1,0 +1,84 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🔨 Build (Next.js)",
+      "type": "shell",
+      "command": "npm run build --loglevel silly",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Собирает Next.js в папку out/"
+    },
+    {
+      "label": "📱 Cap Sync",
+      "type": "shell",
+      "command": "npx cap sync --loglevel silly",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Копирует out/ в Android-проект"
+    },
+    {
+      "label": "🚀 Open Android Studio",
+      "type": "shell",
+      "command": "npx cap open android",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Открывает проект в Android Studio"
+    },
+    {
+      "label": "⚡ Full Android Deploy",
+      "type": "shell",
+      "command": "npm run build --loglevel silly && npx cap sync --loglevel silly",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "Build + Sync одной кнопкой (Ctrl+Shift+B)"
+    },
+    {
+      "label": "⚡ Full Android Open",
+      "type": "shell",
+      "command": "npm run build --loglevel silly && npx cap sync --loglevel silly && npx cap open android",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "Build + Sync одной кнопкой (Ctrl+Shift+B)"
+    },
+    {
+      "label": "🧹 Clean All",
+      "type": "shell",
+      "command": "rm -rf out node_modules/.cache android/app/build",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Очищает кэш сборки"
+    },
+    {
+      "label": "🔍 Check ADB Devices",
+      "type": "shell",
+      "command": "adb devices",
+      "group": "none",
+      "problemMatcher": [],
+      "detail": "Показывает подключённые устройства"
+    },
+    {
+      "label": "📦 Install Dependencies",
+      "type": "shell",
+      "command": "npm ci",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Чистая установка зависимостей"
+    },
+    {
+      "label": "🌐 Dev Server",
+      "type": "shell",
+      "command": "npm run dev",
+      "group": "none",
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Запускает dev-сервер Next.js"
+    }
+  ]
+}
