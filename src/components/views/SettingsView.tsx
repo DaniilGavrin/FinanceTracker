@@ -9,7 +9,10 @@ export function SettingsView() {
 
   const handleClearAllData = async () => {
     try {
-      await db.delete();
+      const { getDatabase } = await import("@/lib/database");
+      const db = getDatabase();
+      // Очищаем все таблицы
+      await db.importData(JSON.stringify({ accounts: [], debts: [], transactions: [] }));
       window.location.reload();
     } catch (error) {
       console.error("Ошибка очистки данных:", error);

@@ -1,104 +1,42 @@
-import Dexie, { type EntityTable } from 'dexie';
 import { v4 as uuidv4 } from 'uuid';
+import { getDatabase, Account, Debt, Transaction, BankType, TransactionType } from '@/lib/database';
 
-// Типы банков
-export type BankType = 'sber' | 'tbank' | 'other' | 'person';
+// Реэкспортируем типы для обратной совместимости
+export type { Account, Debt, Transaction, BankType, TransactionType };
 
-// 1. Типы данных
-export interface Account {
-  id: string;
-  name: string;
-  type: 'debit' | 'credit' | 'cash';
-  balance: number;
-  limit?: number;
-  debtId?: string;
-  bank?: BankType;
-  openedAt?: number;
-  updatedAt: number;
-  synced: boolean;
-}
-
-export interface Debt {
-  id: string;
-  name: string;
-  type: 'bank_loan' | 'person' | 'installment' | 'credit_card';
-  totalAmount: number;
-  currentAmount: number;
-  interestRate?: number;
-  linkedAccountId?: string;
-  bank?: BankType;
-  startDate?: number;
-  termMonths?: number;
-  updatedAt: number;
-  synced: boolean;
-}
-
-export type TransactionType = 
-  | 'income' 
-  | 'expense' 
-  | 'transfer' 
-  | 'debt_payment' 
-  | 'debt_borrow';
-
-export interface Transaction {
-  id: string;
-  type: TransactionType;
-  amount: number;
-  fromAccountId?: string;
-  toAccountId?: string;
-  debtId?: string;
-  categoryId?: string; 
-  description?: string;
-  date: number;
-  createdAt: number;
-  updatedAt: number;
-  synced: boolean;
-}
-
-// 2. Инициализация базы
-export class FinanceDB extends Dexie {
-  accounts!: EntityTable<Account, 'id'>;
-  debts!: EntityTable<Debt, 'id'>;
-  transactions!: EntityTable<Transaction, 'id'>;
-
-  constructor() {
-    super('FinanceTrackerDB');
-    
-    this.version(4).stores({
-      accounts: 'id, type, synced, updatedAt, debtId, bank',
-      debts: 'id, type, synced, updatedAt, linkedAccountId, bank, startDate',
-      transactions: 'id, fromAccountId, toAccountId, debtId, categoryId, date, type, synced, createdAt' // ← ДОБАВИТЬ categoryId
-    }).upgrade(tx => {
-      // Миграция для старых транзакций: добавляем categoryId как undefined
-      return tx.table('transactions').toCollection().modify(tx => {
-        tx.categoryId = tx.categoryId || undefined;
-      });
-    });
-  }
-}
-
-export const db = new FinanceDB();
+// Экспортируем singleton базы данных
+export const db = getDatabase();
 
 // ==========================================
 // БАЗОВЫЕ ФУНКЦИИ СОЗДАНИЯ
 // ==========================================
 
-export function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>) {
-  return db.accounts.add({
+export async function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>): Promise<string> {
+  const id = uuidv4();
+  const now = Date.now();
+  
+  await db.addAccount({
     ...data,
-    id: uuidv4(),
-    updatedAt: Date.now(),
+    id,
+    updatedAt: now,
     synced: false,
   });
+  
+  return id;
 }
 
-export function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>) {
-  return db.debts.add({
+export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>): Promise<string> {
+  const id = uuidv4();
+  const now = Date.now();
+  
+  await db.addDebt({
     ...data,
-    id: uuidv4(),
-    updatedAt: Date.now(),
+    id,
+    updatedAt: now,
     synced: false,
   });
+  
+  return id;
 }
 
 export async function createCreditCard(params: {
@@ -111,61 +49,54 @@ export async function createCreditCard(params: {
   const debtId = uuidv4();
   const now = Date.now();
 
-  await db.transaction('rw', db.accounts, db.debts, async () => {
-    await db.debts.add({
-      id: debtId,
-      name: params.name,
-      type: 'credit_card',
-      totalAmount: 0,
-      currentAmount: 0,
-      linkedAccountId: accountId,
-      bank: params.bank,
-      startDate: params.openedAt,
-      updatedAt: now,
-      synced: false,
-    });
+  await db.addDebt({
+    id: debtId,
+    name: params.name,
+    type: 'credit_card',
+    totalAmount: 0,
+    currentAmount: 0,
+    linkedAccountId: accountId,
+    bank: params.bank,
+    startDate: params.openedAt,
+    updatedAt: now,
+    synced: false,
+  });
 
-    await db.accounts.add({
-      id: accountId,
-      name: params.name,
-      type: 'credit',
-      balance: params.limit,
-      limit: params.limit,
-      debtId: debtId,
-      bank: params.bank,
-      openedAt: params.openedAt,
-      updatedAt: now,
-      synced: false,
-    });
+  await db.addAccount({
+    id: accountId,
+    name: params.name,
+    type: 'credit',
+    balance: params.limit,
+    limit: params.limit,
+    debtId: debtId,
+    bank: params.bank,
+    openedAt: params.openedAt,
+    updatedAt: now,
+    synced: false,
   });
 
   return { accountId, debtId };
 }
 
 // ==========================================
-// ПРИМЕНЕНИЕ И ОТМЕНА ЭФФЕКТОВ (ОДНА ФУНКЦИЯ ДЛЯ ВСЕХ)
+// ПРИМЕНЕНИЕ И ОТМЕНА ЭФФЕКТОВ
 // ==========================================
 
-// Применяет эффекты транзакции к балансам
-async function applyTransactionEffects(tx: Transaction) {
-  const now = Date.now();
-  
+async function applyTransactionEffects(tx: Transaction): Promise<void> {
   switch (tx.type) {
     case 'expense': {
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance -= tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
           
           if (acc.type === 'credit' && acc.debtId) {
-            const debt = await db.debts.get(acc.debtId);
+            const debt = await db.getDebtById(acc.debtId);
             if (debt) {
-              debt.currentAmount += tx.amount;
-              debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
-              debt.updatedAt = now;
-              await db.debts.put(debt);
+              await db.updateDebt(debt.id, {
+                currentAmount: debt.currentAmount + tx.amount,
+                totalAmount: Math.max(debt.totalAmount, debt.currentAmount + tx.amount)
+              });
             }
           }
         }
@@ -174,85 +105,74 @@ async function applyTransactionEffects(tx: Transaction) {
     }
     case 'income': {
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance += tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
         }
       }
       break;
     }
     case 'transfer': {
       if (tx.fromAccountId && tx.toAccountId) {
-        const fromAcc = await db.accounts.get(tx.fromAccountId);
-        const toAcc = await db.accounts.get(tx.toAccountId);
+        const fromAcc = await db.getAccountById(tx.fromAccountId);
+        const toAcc = await db.getAccountById(tx.toAccountId);
         
         if (fromAcc && toAcc) {
-          fromAcc.balance -= tx.amount;
-          fromAcc.updatedAt = now;
-          await db.accounts.put(fromAcc);
-          
-          toAcc.balance += tx.amount;
-          toAcc.updatedAt = now;
-          await db.accounts.put(toAcc);
+          await db.updateAccount(fromAcc.id, { balance: fromAcc.balance - tx.amount });
+          await db.updateAccount(toAcc.id, { balance: toAcc.balance + tx.amount });
         }
       }
       break;
     }
     case 'debt_payment': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: Math.max(0, debt.currentAmount - tx.amount)
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.min(acc.limit || 0, acc.balance + tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.min(acc.limit || 0, acc.balance + tx.amount)
+              });
             }
           }
         }
       }
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance -= tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
         }
       }
       break;
     }
     case 'debt_borrow': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount += tx.amount;
-          debt.totalAmount = Math.max(debt.totalAmount, debt.currentAmount);
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: debt.currentAmount + tx.amount,
+            totalAmount: Math.max(debt.totalAmount, debt.currentAmount + tx.amount)
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.max(-(acc.limit || 0), acc.balance - tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount)
+              });
             }
           }
         }
       }
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance += tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
         }
       }
       break;
@@ -260,25 +180,20 @@ async function applyTransactionEffects(tx: Transaction) {
   }
 }
 
-// Отменяет эффекты транзакции (обратная операция)
-async function reverseTransactionEffects(tx: Transaction) {
-  const now = Date.now();
-  
+async function reverseTransactionEffects(tx: Transaction): Promise<void> {
   switch (tx.type) {
     case 'expense': {
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance += tx.amount; // Возвращаем
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
           
           if (acc.type === 'credit' && acc.debtId) {
-            const debt = await db.debts.get(acc.debtId);
+            const debt = await db.getDebtById(acc.debtId);
             if (debt) {
-              debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
-              debt.updatedAt = now;
-              await db.debts.put(debt);
+              await db.updateDebt(debt.id, {
+                currentAmount: Math.max(0, debt.currentAmount - tx.amount)
+              });
             }
           }
         }
@@ -287,84 +202,73 @@ async function reverseTransactionEffects(tx: Transaction) {
     }
     case 'income': {
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance -= tx.amount; // Забираем
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
         }
       }
       break;
     }
     case 'transfer': {
       if (tx.fromAccountId && tx.toAccountId) {
-        const fromAcc = await db.accounts.get(tx.fromAccountId);
-        const toAcc = await db.accounts.get(tx.toAccountId);
+        const fromAcc = await db.getAccountById(tx.fromAccountId);
+        const toAcc = await db.getAccountById(tx.toAccountId);
         
         if (fromAcc && toAcc) {
-          fromAcc.balance += tx.amount;
-          fromAcc.updatedAt = now;
-          await db.accounts.put(fromAcc);
-          
-          toAcc.balance -= tx.amount;
-          toAcc.updatedAt = now;
-          await db.accounts.put(toAcc);
+          await db.updateAccount(fromAcc.id, { balance: fromAcc.balance + tx.amount });
+          await db.updateAccount(toAcc.id, { balance: toAcc.balance - tx.amount });
         }
       }
       break;
     }
     case 'debt_payment': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount += tx.amount; // Возвращаем долг
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: debt.currentAmount + tx.amount
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.max(-(acc.limit || 0), acc.balance - tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount)
+              });
             }
           }
         }
       }
       if (tx.fromAccountId) {
-        const acc = await db.accounts.get(tx.fromAccountId);
+        const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
-          acc.balance += tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
         }
       }
       break;
     }
     case 'debt_borrow': {
       if (tx.debtId) {
-        const debt = await db.debts.get(tx.debtId);
+        const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          debt.currentAmount = Math.max(0, debt.currentAmount - tx.amount);
-          debt.updatedAt = now;
-          await db.debts.put(debt);
+          await db.updateDebt(debt.id, {
+            currentAmount: Math.max(0, debt.currentAmount - tx.amount)
+          });
           
           if (debt.linkedAccountId) {
-            const acc = await db.accounts.get(debt.linkedAccountId);
+            const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              acc.balance = Math.min(acc.limit || 0, acc.balance + tx.amount);
-              acc.updatedAt = now;
-              await db.accounts.put(acc);
+              await db.updateAccount(acc.id, {
+                balance: Math.min(acc.limit || 0, acc.balance + tx.amount)
+              });
             }
           }
         }
       }
       if (tx.toAccountId) {
-        const acc = await db.accounts.get(tx.toAccountId);
+        const acc = await db.getAccountById(tx.toAccountId);
         if (acc) {
-          acc.balance -= tx.amount;
-          acc.updatedAt = now;
-          await db.accounts.put(acc);
+          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
         }
       }
       break;
@@ -390,10 +294,8 @@ export async function createTransactionWithEffects(
     synced: false,
   };
 
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await db.transactions.add(transaction);
-    await applyTransactionEffects(transaction);
-  });
+  await db.addTransaction(transaction);
+  await applyTransactionEffects(transaction);
 
   return txId;
 }
@@ -402,128 +304,103 @@ export async function createTransactionWithEffects(
 // РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ
 // ==========================================
 
-export async function updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>) {
-  await db.accounts.update(id, {
-    ...data,
-    updatedAt: Date.now(),
-    synced: false,
-  });
+export async function updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
+  await db.updateAccount(id, data);
 }
 
-export async function deleteAccount(id: string) {
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    const acc = await db.accounts.get(id);
-    
-    if (acc) {
-      // Если это кредитка — удаляем связанный долг
-      if (acc.type === 'credit' && acc.debtId) {
-        // Сначала удаляем все транзакции, связанные с долгом
-        await db.transactions.where('debtId').equals(acc.debtId).delete();
-        // Удаляем сам долг
-        await db.debts.delete(acc.debtId);
+export async function deleteAccount(id: string): Promise<void> {
+  const acc = await db.getAccountById(id);
+  
+  if (acc) {
+    if (acc.type === 'credit' && acc.debtId) {
+      const transactions = await db.getTransactions();
+      for (const tx of transactions) {
+        if (tx.debtId === acc.debtId) {
+          await db.deleteTransaction(tx.id);
+        }
       }
-      
-      // Удаляем все транзакции, связанные со счётом
-      await db.transactions.where('fromAccountId').equals(id).delete();
-      await db.transactions.where('toAccountId').equals(id).delete();
-      
-      // Удаляем сам счёт
-      await db.accounts.delete(id);
+      await db.deleteDebt(acc.debtId);
     }
-  });
-}
-
-export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>) {
-  await db.debts.update(id, {
-    ...data,
-    updatedAt: Date.now(),
-    synced: false,
-  });
-}
-
-export async function deleteDebt(id: string) {
-  await db.transaction('rw', db.debts, db.accounts, db.transactions, async () => {
-    const debt = await db.debts.get(id);
     
-    if (debt) {
-      // Если это долг кредитной карты — удаляем связанный счёт
-      if (debt.type === 'credit_card' && debt.linkedAccountId) {
-        // Сначала удаляем все транзакции, связанные со счётом
-        await db.transactions.where('fromAccountId').equals(debt.linkedAccountId).delete();
-        await db.transactions.where('toAccountId').equals(debt.linkedAccountId).delete();
-        // Удаляем сам счёт
-        await db.accounts.delete(debt.linkedAccountId);
+    const transactions = await db.getTransactions();
+    for (const tx of transactions) {
+      if (tx.fromAccountId === id || tx.toAccountId === id) {
+        await db.deleteTransaction(tx.id);
       }
-      
-      // Удаляем все транзакции, связанные с долгом
-      await db.transactions.where('debtId').equals(id).delete();
-      
-      // Удаляем сам долг
-      await db.debts.delete(id);
     }
-  });
+    
+    await db.deleteAccount(id);
+  }
 }
 
-export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>) {
-  const oldTx = await db.transactions.get(id);
+export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
+  await db.updateDebt(id, data);
+}
+
+export async function deleteDebt(id: string): Promise<void> {
+  const debt = await db.getDebtById(id);
+  
+  if (debt) {
+    if (debt.type === 'credit_card' && debt.linkedAccountId) {
+      const transactions = await db.getTransactions();
+      for (const tx of transactions) {
+        if (tx.fromAccountId === debt.linkedAccountId || tx.toAccountId === debt.linkedAccountId) {
+          await db.deleteTransaction(tx.id);
+        }
+      }
+      await db.deleteAccount(debt.linkedAccountId);
+    }
+    
+    const transactions = await db.getTransactions();
+    for (const tx of transactions) {
+      if (tx.debtId === id) {
+        await db.deleteTransaction(tx.id);
+      }
+    }
+    
+    await db.deleteDebt(id);
+  }
+}
+
+export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>): Promise<void> {
+  const oldTx = await db.getTransactionById(id);
   if (!oldTx) return;
 
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await reverseTransactionEffects(oldTx);
-    
-    const updatedTx: Transaction = { 
-      ...oldTx, 
-      ...newData, 
-      updatedAt: Date.now(),
-      synced: false 
-    };
-    await db.transactions.put(updatedTx);
-    
+  await reverseTransactionEffects(oldTx);
+  await db.updateTransaction(id, newData);
+  
+  const updatedTx = await db.getTransactionById(id);
+  if (updatedTx) {
     await applyTransactionEffects(updatedTx);
-  });
+  }
 }
 
-export async function deleteTransaction(id: string) {
-  const tx = await db.transactions.get(id);
+export async function deleteTransaction(id: string): Promise<void> {
+  const tx = await db.getTransactionById(id);
   if (!tx) return;
 
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await reverseTransactionEffects(tx);
-    await db.transactions.delete(id);
-  });
+  await reverseTransactionEffects(tx);
+  await db.deleteTransaction(id);
 }
 
-export async function linkCreditCardToDebt(accountId: string, debtId: string) {
-  await db.transaction('rw', db.accounts, db.debts, async () => {
-    const acc = await db.accounts.get(accountId);
-    const debt = await db.debts.get(debtId);
-    
-    if (acc && debt) {
-      acc.debtId = debtId;
-      debt.linkedAccountId = accountId;
-      await db.accounts.put(acc);
-      await db.debts.put(debt);
-    }
-  });
+export async function linkCreditCardToDebt(accountId: string, debtId: string): Promise<void> {
+  const acc = await db.getAccountById(accountId);
+  const debt = await db.getDebtById(debtId);
+  
+  if (acc && debt) {
+    await db.updateAccount(accountId, { debtId });
+    await db.updateDebt(debtId, { linkedAccountId: accountId });
+  }
 }
+
+// ==========================================
+// ЭКСПОРТ/ИМПОРТ
+// ==========================================
 
 export async function exportData(): Promise<string> {
-  const accounts = await db.accounts.toArray();
-  const debts = await db.debts.toArray();
-  const transactions = await db.transactions.toArray();
-  
-  return JSON.stringify({ accounts, debts, transactions, exportedAt: Date.now() });
+  return await db.exportData();
 }
 
 export async function importData(json: string): Promise<void> {
-  const data = JSON.parse(json);
-  await db.transaction('rw', db.accounts, db.debts, db.transactions, async () => {
-    await db.accounts.clear();
-    await db.debts.clear();
-    await db.transactions.clear();
-    
-    await db.accounts.bulkAdd(data.accounts);
-    await db.debts.bulkAdd(data.debts);
-    await db.transactions.bulkAdd(data.transactions);
-  });
+  await db.importData(json);
 }

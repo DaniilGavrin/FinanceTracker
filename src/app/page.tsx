@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, deleteAccount, deleteDebt, deleteTransaction } from "@/db";
+import { useDatabase } from "@/hooks/useDatabase";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { deleteAccount, deleteDebt, deleteTransaction } from "@/db";
+import { migrateFromIndexedDB } from "@/lib/migration";
 
 import { AddAccountForm } from "@/components/AddAccountForm";
 import { AddDebtForm } from "@/components/AddDebtForm";
@@ -21,7 +22,9 @@ type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
   const isOnline = useOnlineStatus();
+  const { accounts, debts, transactions, isReady, refresh } = useDatabase();
   const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [migrationDone, setMigrationDone] = useState(false);
   
   // Модалки
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -30,10 +33,21 @@ export default function Home() {
   const [showFAQ, setShowFAQ] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'account' | 'debt' | 'transaction'; id: string; name: string } | null>(null);
 
-  // Данные (для операций берем все, без limit)
-  const accounts = useLiveQuery(() => db.accounts.toArray(), []);
-  const debts = useLiveQuery(() => db.debts.toArray(), []);
-  const transactions = useLiveQuery(() => db.transactions.orderBy('date').reverse().toArray(), []);
+  // Миграция из IndexedDB (один раз)
+  useState(() => {
+    if (!migrationDone) {
+      migrateFromIndexedDB().then((migrated) => {
+        if (migrated) {
+          refresh();
+          alert('Данные успешно перенесены из старой версии приложения');
+        }
+        setMigrationDone(true);
+      }).catch((error) => {
+        console.error('Ошибка миграции:', error);
+        setMigrationDone(true);
+      });
+    }
+  });
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -41,6 +55,7 @@ export default function Home() {
       if (deleteTarget.type === 'account') await deleteAccount(deleteTarget.id);
       if (deleteTarget.type === 'debt') await deleteDebt(deleteTarget.id);
       if (deleteTarget.type === 'transaction') await deleteTransaction(deleteTarget.id);
+      await refresh(); // Обновляем данные после удаления
     } catch (error) {
       console.error('Ошибка удаления:', error);
     }
@@ -50,6 +65,22 @@ export default function Home() {
   const handleDeleteRequest = (type: 'account' | 'debt' | 'transaction', id: string, name: string) => {
     setDeleteTarget({ type, id, name });
   };
+
+  // Обёртка для обновления данных после добавления
+  const handleDataChanged = () => {
+    refresh();
+  };
+
+  if (!isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin text-4xl mb-4">⏳</div>
+          <p className="text-muted-foreground">Инициализация базы данных...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -96,10 +127,10 @@ export default function Home() {
       {/* Нижняя навигация */}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Глобальные модалки */}
-      {showAddAccount && <AddAccountForm onClose={() => setShowAddAccount(false)} />}
-      {showAddDebt && <AddDebtForm onClose={() => setShowAddDebt(false)} />}
-      {showAddTransaction && <AddTransactionForm onClose={() => setShowAddTransaction(false)} />}
+      {/* Глобальные модалки — передаём onDataChanged для обновления */}
+      {showAddAccount && <AddAccountForm onClose={() => { setShowAddAccount(false); handleDataChanged(); }} />}
+      {showAddDebt && <AddDebtForm onClose={() => { setShowAddDebt(false); handleDataChanged(); }} />}
+      {showAddTransaction && <AddTransactionForm onClose={() => { setShowAddTransaction(false); handleDataChanged(); }} />}
       {showFAQ && <FAQModal onClose={() => setShowFAQ(false)} />}
       {deleteTarget && (
         <ConfirmDialog 
