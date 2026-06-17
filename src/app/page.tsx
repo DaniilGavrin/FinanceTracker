@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useDatabase } from "@/hooks/useDatabase";
-import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { deleteAccount, deleteDebt, deleteTransaction } from "@/db";
 import { migrateFromIndexedDB } from "@/lib/migration";
 
@@ -21,7 +20,6 @@ import { SettingsView } from "@/components/views/SettingsView";
 type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
-  const isOnline = useOnlineStatus();
   const { accounts, debts, transactions, isReady, refresh } = useDatabase();
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [migrationDone, setMigrationDone] = useState(false);
@@ -89,10 +87,6 @@ export default function Home() {
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight">Finance Tracker</h1>
           <div className="flex items-center gap-3">
-            <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${isOnline ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
-              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isOnline ? "bg-green-400" : "bg-red-400"}`}></span>
-              {isOnline ? "В сети" : "Оффлайн"}
-            </div>
             <button onClick={() => setShowFAQ(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors" title="Помощь">
               <span className="text-sm font-bold">?</span>
             </button>
