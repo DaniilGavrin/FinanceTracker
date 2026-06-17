@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 interface FAQItem {
   question: string;
@@ -51,6 +52,7 @@ const faqData: FAQItem[] = [
 ];
 
 export function FAQModal({ onClose }: { onClose: () => void }) {
+  useModalBackHandler(onClose);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 

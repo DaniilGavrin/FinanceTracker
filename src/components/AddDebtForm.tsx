@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { createDebt, BankType } from "@/db";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 export function AddDebtForm({ onClose }: { onClose: () => void }) {
+  useModalBackHandler(onClose);
   const [name, setName] = useState("");
   const [type, setType] = useState<"bank_loan" | "person" | "installment">("bank_loan");
   const [totalAmount, setTotalAmount] = useState("");

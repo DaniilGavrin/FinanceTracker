@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { Account, Debt, Transaction, deleteAccount, deleteTransaction } from "@/db";
 import { TransactionItem } from "@/components/lists/TransactionItem";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 interface Props {
   account: Account;
@@ -22,6 +23,7 @@ export function AccountDetailView({
   onBack,
   onDataChanged,
 }: Props) {
+    useModalBackHandler(onBack);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
 

@@ -1,4 +1,5 @@
 "use client";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 import { useState, useMemo } from "react";
 
@@ -30,6 +31,7 @@ export function PickerModal({
   searchPlaceholder = "Поиск...",
   emptyText = "Ничего не найдено",
 }: Props) {
+  useModalBackHandler(onClose);
   const [search, setSearch] = useState("");
 
   const filteredOptions = useMemo(() => {

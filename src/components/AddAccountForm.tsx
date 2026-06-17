@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { createAccount, createCreditCard, createInstallment, BankType } from "@/db";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 export function AddAccountForm({ onClose }: { onClose: () => void }) {
+  useModalBackHandler(onClose);
   const [name, setName] = useState("");
   const [type, setType] = useState<"debit" | "cash" | "credit" | "installment">("debit");
   const [balance, setBalance] = useState("");

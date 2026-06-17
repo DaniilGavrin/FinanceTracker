@@ -5,10 +5,12 @@ import { useDatabase } from "@/hooks/useDatabase";
 import { createTransactionWithEffects, TransactionType } from "@/db";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { PickerModal, PickerOption } from "@/components/PickerModal";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 type PickerTarget = "fromAccount" | "toAccount" | "debt" | null;
 
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
+  useModalBackHandler(onClose);
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");

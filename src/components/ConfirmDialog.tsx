@@ -1,4 +1,5 @@
 "use client";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 export function ConfirmDialog({ 
   title, 
@@ -11,6 +12,7 @@ export function ConfirmDialog({
   onConfirm: () => void; 
   onCancel: () => void;
 }) {
+  useModalBackHandler(onCancel);
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="card max-w-sm w-full">
