@@ -29,8 +29,30 @@ export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>
   const id = uuidv4();
   const now = Date.now();
   
+  let finalData = { ...data };
+  
+  // Для кредита рассчитываем totalAmount с учётом процентов
+  if (data.type === 'bank_loan' && data.interestRate && data.termMonths && data.totalAmount > 0) {
+    const monthlyRate = data.interestRate / 100 / 12;
+    const months = data.termMonths;
+    const principal = data.totalAmount;
+    
+    // Аннуитетный платёж
+    const monthlyPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+    
+    // Общая сумма выплат (с процентами)
+    const totalPayments = monthlyPayment * months;
+    
+    finalData = {
+      ...data,
+      totalAmount: Math.round(totalPayments * 100) / 100,
+      currentAmount: Math.round(totalPayments * 100) / 100,
+      monthlyPayment: Math.round(monthlyPayment * 100) / 100,
+    };
+  }
+  
   await db.addDebt({
-    ...data,
+    ...finalData,
     id,
     updatedAt: now,
     synced: false,

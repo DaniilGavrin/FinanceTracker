@@ -4,6 +4,43 @@ import { useState } from "react";
 import { createDebt, BankType } from "@/db";
 import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
+const InputField = ({ 
+  label, 
+  value, 
+  onChange, 
+  type = "text", 
+  placeholder, 
+  hint, 
+  required, 
+  step, 
+  min 
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+  hint?: string;
+  required?: boolean;
+  step?: string;
+  min?: string;
+}) => (
+  <div>
+    <label className="block text-sm font-medium mb-1">{label}</label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      step={step}
+      min={min}
+      className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+      required={required}
+    />
+    {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+  </div>
+);
+
 export function AddDebtForm({ onClose }: { onClose: () => void }) {
   useModalBackHandler(onClose);
   
@@ -15,26 +52,17 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
   const [bank, setBank] = useState<BankType>("sber");
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [termMonths, setTermMonths] = useState("");
-  
-  // Новые поля
   const [nextPaymentDate, setNextPaymentDate] = useState("");
   const [monthlyPayment, setMonthlyPayment] = useState("");
   const [paymentType, setPaymentType] = useState<"annuity" | "differentiated">("annuity");
-  
-  // Для рассрочек
   const [store, setStore] = useState("");
   const [purchaseDescription, setPurchaseDescription] = useState("");
   const [installmentsCount, setInstallmentsCount] = useState("");
-  
-  // Для кредитных карт (создаются через AddAccountForm, но долг может редактироваться)
-  
-  // Для физлиц
   const [contactInfo, setContactInfo] = useState("");
   const [repaymentTerms, setRepaymentTerms] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const total = parseFloat(totalAmount) || 0;
     const current = parseFloat(currentAmount) || total;
 
@@ -57,27 +85,8 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
       contactInfo: type === "person" ? contactInfo || undefined : undefined,
       repaymentTerms: type === "person" ? repaymentTerms || undefined : undefined,
     });
-
     onClose();
   };
-
-  // Общий input-блок
-  const InputField = ({ label, value, onChange, type = "text", placeholder, hint, required, step, min }: any) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        step={step}
-        min={min}
-        className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-        required={required}
-      />
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -85,7 +94,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
         <h2 className="text-xl font-bold mb-4">Добавить обязательство</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Тип */}
           <div>
             <label className="block text-sm font-medium mb-2">Тип обязательства</label>
             <div className="grid grid-cols-3 gap-2">
@@ -111,7 +119,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Название */}
           <InputField
             label="Название"
             value={name}
@@ -124,7 +131,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             required
           />
 
-          {/* Банк (не для физлиц) */}
           {type !== "person" && (
             <div>
               <label className="block text-sm font-medium mb-1">Банк</label>
@@ -140,7 +146,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Дата начала */}
           <InputField
             label={type === "person" ? "Дата займа" : "Дата открытия"}
             value={startDate}
@@ -149,7 +154,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             required
           />
 
-          {/* Общая сумма */}
           <InputField
             label={type === "person" ? "Сумма долга (₽)" : "Общая сумма (₽)"}
             value={totalAmount}
@@ -160,7 +164,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             required
           />
 
-          {/* Текущий остаток */}
           <InputField
             label="Текущий остаток (₽)"
             value={currentAmount}
@@ -171,9 +174,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             hint="Если только взяли — оставьте пустым"
           />
 
-          {/* === СПЕЦИФИЧНЫЕ ПОЛЯ ПО ТИПАМ === */}
-          
-          {/* КРЕДИТ */}
           {type === "bank_loan" && (
             <>
               <InputField
@@ -220,7 +220,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {/* РАССРОЧКА */}
           {type === "installment" && (
             <>
               <InputField
@@ -260,7 +259,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {/* ФИЗЛИЦО */}
           {type === "person" && (
             <>
               <InputField
@@ -288,7 +286,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {/* Кнопки */}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Отмена

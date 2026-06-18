@@ -18,6 +18,7 @@ import { AccountDetailView } from "@/components/views/AccountDetailView";
 import { DebtDetailView } from "@/components/views/DebtDetailView";
 import { TransactionsView } from "@/components/views/TransactionsView";
 import { SettingsView } from "@/components/views/SettingsView";
+import { PaymentScheduleView } from "@/components/views/PaymentScheduleView";
 
 type Tab = "home" | "accounts" | "transactions" | "settings";
 
@@ -34,6 +35,7 @@ export default function Home() {
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'debt' | 'transaction'; id: string; name: string } | null>(null);
+  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
 
   // Миграция из IndexedDB (один раз)
   useEffect(() => {
@@ -110,6 +112,16 @@ export default function Home() {
 
   // Если выбран долг — показываем экран деталей долга (БЕЗ header и навигации)
   if (selectedDebt) {
+    // Если показываем график платежей
+    if (showPaymentSchedule) {
+      return (
+        <PaymentScheduleView
+          debt={selectedDebt}
+          onBack={() => setShowPaymentSchedule(false)}
+        />
+      );
+    }
+    
     return (
       <DebtDetailView
         debt={selectedDebt}
@@ -117,6 +129,7 @@ export default function Home() {
         allAccounts={accounts}
         onBack={() => setSelectedDebtId(null)}
         onDataChanged={handleDataChanged}
+        onShowSchedule={() => setShowPaymentSchedule(true)}  // ← ДОБАВЛЕНО
       />
     );
   }

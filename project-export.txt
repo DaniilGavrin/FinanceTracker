@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 18.06.2026 09:04:35
+Дата: 18.06.2026 10:03:41
 Структура: src/
 
 =============================================
@@ -516,6 +516,7 @@ import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 export function AddDebtForm({ onClose }: { onClose: () => void }) {
   useModalBackHandler(onClose);
+  
   const [name, setName] = useState("");
   const [type, setType] = useState<"bank_loan" | "person" | "installment">("bank_loan");
   const [totalAmount, setTotalAmount] = useState("");
@@ -524,6 +525,22 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
   const [bank, setBank] = useState<BankType>("sber");
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [termMonths, setTermMonths] = useState("");
+  
+  // Новые поля
+  const [nextPaymentDate, setNextPaymentDate] = useState("");
+  const [monthlyPayment, setMonthlyPayment] = useState("");
+  const [paymentType, setPaymentType] = useState<"annuity" | "differentiated">("annuity");
+  
+  // Для рассрочек
+  const [store, setStore] = useState("");
+  const [purchaseDescription, setPurchaseDescription] = useState("");
+  const [installmentsCount, setInstallmentsCount] = useState("");
+  
+  // Для кредитных карт (создаются через AddAccountForm, но долг может редактироваться)
+  
+  // Для физлиц
+  const [contactInfo, setContactInfo] = useState("");
+  const [repaymentTerms, setRepaymentTerms] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -540,41 +557,82 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
       bank: type !== "person" ? bank : "person",
       startDate: new Date(startDate).getTime(),
       termMonths: termMonths ? parseInt(termMonths) : undefined,
+      nextPaymentDate: nextPaymentDate ? new Date(nextPaymentDate).getTime() : undefined,
+      monthlyPayment: monthlyPayment ? parseFloat(monthlyPayment) : undefined,
+      paymentType: type === "bank_loan" ? paymentType : undefined,
+      store: type === "installment" ? store || undefined : undefined,
+      purchaseDescription: type === "installment" ? purchaseDescription || undefined : undefined,
+      installmentsCount: type === "installment" && installmentsCount ? parseInt(installmentsCount) : undefined,
+      paidInstallments: type === "installment" ? 0 : undefined,
+      contactInfo: type === "person" ? contactInfo || undefined : undefined,
+      repaymentTerms: type === "person" ? repaymentTerms || undefined : undefined,
     });
 
     onClose();
   };
 
+  // Общий input-блок
+  const InputField = ({ label, value, onChange, type = "text", placeholder, hint, required, step, min }: any) => (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        step={step}
+        min={min}
+        className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+        required={required}
+      />
+      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <h2 className="text-xl font-bold mb-4">Добавить долг</h2>
+        <h2 className="text-xl font-bold mb-4">Добавить обязательство</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Тип */}
           <div>
-            <label className="block text-sm font-medium mb-1">Название</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Потребительский кредит"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              required
-            />
+            <label className="block text-sm font-medium mb-2">Тип обязательства</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: "bank_loan", label: "Кредит", icon: "🏦" },
+                { value: "person", label: "Физлицо", icon: "👤" },
+                { value: "installment", label: "Рассрочка", icon: "📦" },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setType(opt.value as any)}
+                  className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${
+                    type === opt.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-secondary border-border hover:border-primary/50"
+                  }`}
+                >
+                  <div className="text-lg mb-1">{opt.icon}</div>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Тип</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as any)}
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="bank_loan">Кредит</option>
-              <option value="person">Долг физлицу</option>
-              <option value="installment">Рассрочка</option>
-            </select>
-          </div>
+          {/* Название */}
+          <InputField
+            label="Название"
+            value={name}
+            onChange={setName}
+            placeholder={
+              type === "installment" ? "Ozon Рассрочка" :
+              type === "person" ? "Долг Ивану" :
+              "Потребительский кредит"
+            }
+            required
+          />
 
           {/* Банк (не для физлиц) */}
           {type !== "person" && (
@@ -592,93 +650,160 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Дата взятия</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              required
-            />
-          </div>
+          {/* Дата начала */}
+          <InputField
+            label={type === "person" ? "Дата займа" : "Дата открытия"}
+            value={startDate}
+            onChange={setStartDate}
+            type="date"
+            required
+          />
 
-          {/* Срок (для кредитов) */}
+          {/* Общая сумма */}
+          <InputField
+            label={type === "person" ? "Сумма долга (₽)" : "Общая сумма (₽)"}
+            value={totalAmount}
+            onChange={setTotalAmount}
+            type="number"
+            placeholder="100000"
+            step="0.01"
+            required
+          />
+
+          {/* Текущий остаток */}
+          <InputField
+            label="Текущий остаток (₽)"
+            value={currentAmount}
+            onChange={setCurrentAmount}
+            type="number"
+            placeholder="Оставьте пустым, если равно общей сумме"
+            step="0.01"
+            hint="Если только взяли — оставьте пустым"
+          />
+
+          {/* === СПЕЦИФИЧНЫЕ ПОЛЯ ПО ТИПАМ === */}
+          
+          {/* КРЕДИТ */}
           {type === "bank_loan" && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Срок (месяцев)</label>
-              <input
+            <>
+              <InputField
+                label="Годовая ставка (%)"
+                value={interestRate}
+                onChange={setInterestRate}
                 type="number"
+                placeholder="19.9"
+                step="0.1"
+              />
+              <InputField
+                label="Срок (месяцев)"
                 value={termMonths}
-                onChange={(e) => setTermMonths(e.target.value)}
+                onChange={setTermMonths}
+                type="number"
                 placeholder="24"
                 min="1"
-                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
-            </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Тип платежа</label>
+                <select
+                  value={paymentType}
+                  onChange={(e) => setPaymentType(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="annuity">Аннуитетный</option>
+                  <option value="differentiated">Дифференцированный</option>
+                </select>
+              </div>
+              <InputField
+                label="Ежемесячный платёж (₽)"
+                value={monthlyPayment}
+                onChange={setMonthlyPayment}
+                type="number"
+                placeholder="Рассчитается автоматически или введите вручную"
+                step="0.01"
+              />
+              <InputField
+                label="Дата следующего платежа"
+                value={nextPaymentDate}
+                onChange={setNextPaymentDate}
+                type="date"
+              />
+            </>
           )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Общая сумма
-              <span className="ml-1 text-xs text-muted-foreground">(сколько взяли изначально)</span>
-            </label>
-            <input
-              type="number"
-              value={totalAmount}
-              onChange={(e) => setTotalAmount(e.target.value)}
-              placeholder="100000"
-              step="0.01"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              required
-            />
-          </div>
+          {/* РАССРОЧКА */}
+          {type === "installment" && (
+            <>
+              <InputField
+                label="Магазин / Сервис"
+                value={store}
+                onChange={setStore}
+                placeholder="Ozon, Яндекс Маркет, DNS..."
+              />
+              <InputField
+                label="Что куплено"
+                value={purchaseDescription}
+                onChange={setPurchaseDescription}
+                placeholder="iPhone 15, Ноутбук..."
+              />
+              <InputField
+                label="Количество платежей"
+                value={installmentsCount}
+                onChange={setInstallmentsCount}
+                type="number"
+                placeholder="4"
+                min="1"
+              />
+              <InputField
+                label="Ежемесячный платёж (₽)"
+                value={monthlyPayment}
+                onChange={setMonthlyPayment}
+                type="number"
+                placeholder="Рассчитается автоматически"
+                step="0.01"
+              />
+              <InputField
+                label="Дата следующего платежа"
+                value={nextPaymentDate}
+                onChange={setNextPaymentDate}
+                type="date"
+              />
+            </>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Текущий остаток
-              <span className="ml-1 text-xs text-muted-foreground">(сколько должны сейчас)</span>
-            </label>
-            <input
-              type="number"
-              value={currentAmount}
-              onChange={(e) => setCurrentAmount(e.target.value)}
-              placeholder="Оставьте пустым, если равно общей сумме"
-              step="0.01"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Если вы только взяли долг — оставьте пустым.
-            </p>
-          </div>
+          {/* ФИЗЛИЦО */}
+          {type === "person" && (
+            <>
+              <InputField
+                label="Контакты должника"
+                value={contactInfo}
+                onChange={setContactInfo}
+                placeholder="Телефон, Telegram..."
+              />
+              <div>
+                <label className="block text-sm font-medium mb-1">Условия возврата</label>
+                <textarea
+                  value={repaymentTerms}
+                  onChange={(e) => setRepaymentTerms(e.target.value)}
+                  placeholder="До 1 января 2027, частями по 10000₽..."
+                  rows={3}
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+              </div>
+              <InputField
+                label="Дата возврата"
+                value={nextPaymentDate}
+                onChange={setNextPaymentDate}
+                type="date"
+              />
+            </>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Годовая ставка (%)
-              <span className="ml-1 text-xs text-muted-foreground">(необязательно)</span>
-            </label>
-            <input
-              type="number"
-              value={interestRate}
-              onChange={(e) => setInterestRate(e.target.value)}
-              placeholder="19.9"
-              step="0.1"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
+          {/* Кнопки */}
           <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-secondary flex-1"
-            >
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Отмена
             </button>
-            <button
-              type="submit"
-              className="btn-primary flex-1"
-            >
+            <button type="submit" className="btn-primary flex-1">
               Добавить
             </button>
           </div>
@@ -2550,28 +2675,113 @@ export function DebtDetailView({
         </div>
 
         {/* Детали кредита */}
-        {debt.type === 'bank_loan' && (
+        {/* Параметры обязательства */}
+        <div className="card mb-4">
+          <h3 className="font-semibold text-sm mb-3">
+            {debt.type === 'bank_loan' ? 'Параметры кредита' : 
+            debt.type === 'installment' ? 'Параметры рассрочки' : 
+            debt.type === 'person' ? 'Детали долга' : 'Параметры'}
+          </h3>
+          <div className="space-y-2">
+            {/* Ставка */}
+            {debt.interestRate !== undefined && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Ставка</span>
+                <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+              </div>
+            )}
+            
+            {/* Срок */}
+            {debt.termMonths && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Срок</span>
+                <span className="text-sm">{debt.termMonths} мес.</span>
+              </div>
+            )}
+            
+            {/* Тип платежа */}
+            {debt.paymentType && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Тип платежа</span>
+                <span className="text-sm">
+                  {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
+                </span>
+              </div>
+            )}
+            
+            {/* Ежемесячный платёж */}
+            {(debt.monthlyPayment || monthlyPayment) && (
+              <div className="flex justify-between items-center pt-2 border-t border-border">
+                <span className="text-sm font-medium">Ежемесячный платёж</span>
+                <span className="font-mono text-lg font-bold text-primary">
+                  ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
+                </span>
+              </div>
+            )}
+            
+            {/* Дата следующего платежа */}
+            {debt.nextPaymentDate && (
+              <div className="flex justify-between items-center pt-2 border-t border-border">
+                <span className="text-sm text-muted-foreground">Следующий платёж</span>
+                <span className={`text-sm font-medium ${
+                  debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
+                    ? 'text-destructive' 
+                    : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
+                      ? 'text-yellow-500'
+                      : 'text-foreground'
+                }`}>
+                  {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
+                  {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Рассрочка: магазин и покупка */}
+        {debt.type === 'installment' && (debt.store || debt.purchaseDescription || debt.installmentsCount) && (
           <div className="card mb-4">
-            <h3 className="font-semibold text-sm mb-3">Параметры кредита</h3>
+            <h3 className="font-semibold text-sm mb-3">Детали рассрочки</h3>
             <div className="space-y-2">
-              {debt.interestRate !== undefined && (
+              {debt.store && (
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Ставка</span>
-                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+                  <span className="text-sm text-muted-foreground">Магазин</span>
+                  <span className="text-sm font-medium">{debt.store}</span>
                 </div>
               )}
-              {debt.termMonths && (
+              {debt.purchaseDescription && (
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Срок</span>
-                  <span className="text-sm">{debt.termMonths} мес.</span>
+                  <span className="text-sm text-muted-foreground">Покупка</span>
+                  <span className="text-sm font-medium">{debt.purchaseDescription}</span>
                 </div>
               )}
-              {monthlyPayment && (
-                <div className="flex justify-between items-center pt-2 border-t border-border">
-                  <span className="text-sm font-medium">Ежемесячный платёж</span>
-                  <span className="font-mono text-lg font-bold text-primary">
-                    ≈ ₽ {monthlyPayment.toLocaleString('ru-RU')}
+              {debt.installmentsCount && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Платежи</span>
+                  <span className="text-sm font-medium">
+                    {debt.paidInstallments || 0} / {debt.installmentsCount}
                   </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Физлицо: контакты и условия */}
+        {debt.type === 'person' && (debt.contactInfo || debt.repaymentTerms) && (
+          <div className="card mb-4">
+            <h3 className="font-semibold text-sm mb-3">Контакты и условия</h3>
+            <div className="space-y-2">
+              {debt.contactInfo && (
+                <div>
+                  <span className="text-xs text-muted-foreground">Контакты</span>
+                  <p className="text-sm">{debt.contactInfo}</p>
+                </div>
+              )}
+              {debt.repaymentTerms && (
+                <div>
+                  <span className="text-xs text-muted-foreground">Условия возврата</span>
+                  <p className="text-sm">{debt.repaymentTerms}</p>
                 </div>
               )}
             </div>
@@ -2841,7 +3051,7 @@ export function SettingsView() {
         icon="💾"
         status={overallStatus === "neutral" ? undefined : overallStatus}
         statusText={overallStatusText}
-        defaultOpen={true}
+        defaultOpen={false}
       >
         {storageInfo ? (
           <div className="space-y-4">
@@ -3861,6 +4071,28 @@ export interface Debt {
   termMonths?: number;
   updatedAt: number;
   synced: boolean;
+
+  // === ОБЩИЕ ПОЛЯ ===
+  nextPaymentDate?: number;      // Дата следующего платежа (timestamp)
+  monthlyPayment?: number;       // Ежемесячный платёж (введённый вручную)
+  
+  // === ДЛЯ КРЕДИТОВ (bank_loan) ===
+  paymentType?: 'annuity' | 'differentiated'; // Тип платежа
+  
+  // === ДЛЯ РАССРОЧЕК (installment) ===
+  store?: string;                // Магазин/сервис
+  purchaseDescription?: string;  // Что куплено
+  installmentsCount?: number;    // Общее количество платежей
+  paidInstallments?: number;     // Сколько уже оплачено
+  
+  // === ДЛЯ КРЕДИТНЫХ КАРТ (credit_card) ===
+  gracePeriodEnd?: number;       // Конец льготного периода
+  paymentDay?: number;           // День платежа (1-31)
+  minPayment?: number;           // Минимальный платёж
+  
+  // === ДЛЯ ДОЛГОВ ФИЗЛИЦАМ (person) ===
+  contactInfo?: string;          // Контакты должника
+  repaymentTerms?: string;       // Условия возврата
 }
 
 export type TransactionType = 'income' | 'expense' | 'transfer' | 'debt_payment' | 'debt_borrow';
@@ -3908,6 +4140,7 @@ export class CapacitorDatabase implements Database {
       
       // Создаём таблицы
       await this.createTables();
+      await this.migrateDebtsTable();
     } catch (error) {
       console.error('Ошибка инициализации БД:', error);
       throw error;
@@ -3945,7 +4178,19 @@ export class CapacitorDatabase implements Database {
         startDate INTEGER,
         termMonths INTEGER,
         updatedAt INTEGER NOT NULL,
-        synced INTEGER NOT NULL
+        synced INTEGER NOT NULL,
+        nextPaymentDate INTEGER,
+        monthlyPayment REAL,
+        paymentType TEXT,
+        store TEXT,
+        purchaseDescription TEXT,
+        installmentsCount INTEGER,
+        paidInstallments INTEGER,
+        gracePeriodEnd INTEGER,
+        paymentDay INTEGER,
+        minPayment REAL,
+        contactInfo TEXT,
+        repaymentTerms TEXT
       )
     `);
 
@@ -3977,6 +4222,45 @@ export class CapacitorDatabase implements Database {
     await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_toAccountId ON transactions(toAccountId)`);
     await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_debtId ON transactions(debtId)`);
     await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_categoryId ON transactions(categoryId)`);
+  }
+
+
+  private async migrateDebtsTable(): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    // Новые колонки, которые могли отсутствовать в старых версиях
+    const newColumns = [
+      { name: 'nextPaymentDate', type: 'INTEGER' },
+      { name: 'monthlyPayment', type: 'REAL' },
+      { name: 'paymentType', type: 'TEXT' },
+      { name: 'store', type: 'TEXT' },
+      { name: 'purchaseDescription', type: 'TEXT' },
+      { name: 'installmentsCount', type: 'INTEGER' },
+      { name: 'paidInstallments', type: 'INTEGER' },
+      { name: 'gracePeriodEnd', type: 'INTEGER' },
+      { name: 'paymentDay', type: 'INTEGER' },
+      { name: 'minPayment', type: 'REAL' },
+      { name: 'contactInfo', type: 'TEXT' },
+      { name: 'repaymentTerms', type: 'TEXT' },
+    ];
+    
+    // Получаем существующие колонки
+    const tableInfo = await this.db.query('PRAGMA table_info(debts)');
+    const existingColumns = new Set(
+      (tableInfo.values || []).map((col: any) => col.name)
+    );
+    
+    // Добавляем только отсутствующие колонки
+    for (const col of newColumns) {
+      if (!existingColumns.has(col.name)) {
+        try {
+          await this.db.execute(`ALTER TABLE debts ADD COLUMN "${col.name}" ${col.type}`);
+          console.log(`Добавлена колонка: ${col.name}`);
+        } catch (e) {
+          console.warn(`Не удалось добавить колонку ${col.name}:`, e);
+        }
+      }
+    }
   }
 
   async close(): Promise<void> {
@@ -4106,10 +4390,9 @@ export class CapacitorDatabase implements Database {
 
   async addDebt(debt: Debt): Promise<void> {
     if (!this.db) throw new Error('База данных не инициализирована');
-    
     await this.db.run(
-      `INSERT INTO debts (id, name, type, totalAmount, currentAmount, interestRate, linkedAccountId, bank, startDate, termMonths, updatedAt, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO debts (id, name, type, totalAmount, currentAmount, interestRate, linkedAccountId, bank, startDate, termMonths, updatedAt, synced, nextPaymentDate, monthlyPayment, paymentType, store, purchaseDescription, installmentsCount, paidInstallments, gracePeriodEnd, paymentDay, minPayment, contactInfo, repaymentTerms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         debt.id,
         debt.name,
@@ -4122,7 +4405,19 @@ export class CapacitorDatabase implements Database {
         debt.startDate || null,
         debt.termMonths || null,
         debt.updatedAt,
-        debt.synced ? 1 : 0
+        debt.synced ? 1 : 0,
+        debt.nextPaymentDate || null,
+        debt.monthlyPayment || null,
+        debt.paymentType || null,
+        debt.store || null,
+        debt.purchaseDescription || null,
+        debt.installmentsCount || null,
+        debt.paidInstallments || null,
+        debt.gracePeriodEnd || null,
+        debt.paymentDay || null,
+        debt.minPayment || null,
+        debt.contactInfo || null,
+        debt.repaymentTerms || null,
       ]
     );
   }
@@ -4133,49 +4428,41 @@ export class CapacitorDatabase implements Database {
     const updates: string[] = [];
     const values: any[] = [];
     
-    if (data.name !== undefined) {
-      updates.push('name = ?');
-      values.push(data.name);
-    }
-    if (data.type !== undefined) {
-      updates.push('type = ?');
-      values.push(data.type);
-    }
-    if (data.totalAmount !== undefined) {
-      updates.push('totalAmount = ?');
-      values.push(data.totalAmount);
-    }
-    if (data.currentAmount !== undefined) {
-      updates.push('currentAmount = ?');
-      values.push(data.currentAmount);
-    }
-    if (data.interestRate !== undefined) {
-      updates.push('interestRate = ?');
-      values.push(data.interestRate);
-    }
-    if (data.linkedAccountId !== undefined) {
-      updates.push('linkedAccountId = ?');
-      values.push(data.linkedAccountId);
-    }
-    if (data.bank !== undefined) {
-      updates.push('bank = ?');
-      values.push(data.bank);
-    }
-    if (data.startDate !== undefined) {
-      updates.push('startDate = ?');
-      values.push(data.startDate);
-    }
-    if (data.termMonths !== undefined) {
-      updates.push('termMonths = ?');
-      values.push(data.termMonths);
+    const fieldMap: Record<string, string> = {
+      name: 'name',
+      type: 'type',
+      totalAmount: 'totalAmount',
+      currentAmount: 'currentAmount',
+      interestRate: 'interestRate',
+      linkedAccountId: 'linkedAccountId',
+      bank: 'bank',
+      startDate: 'startDate',
+      termMonths: 'termMonths',
+      nextPaymentDate: 'nextPaymentDate',
+      monthlyPayment: 'monthlyPayment',
+      paymentType: 'paymentType',
+      store: 'store',
+      purchaseDescription: 'purchaseDescription',
+      installmentsCount: 'installmentsCount',
+      paidInstallments: 'paidInstallments',
+      gracePeriodEnd: 'gracePeriodEnd',
+      paymentDay: 'paymentDay',
+      minPayment: 'minPayment',
+      contactInfo: 'contactInfo',
+      repaymentTerms: 'repaymentTerms',
+    };
+    
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if ((data as any)[key] !== undefined) {
+        updates.push(`${col} = ?`);
+        values.push((data as any)[key] ?? null);
+      }
     }
     
     if (updates.length > 0) {
       updates.push('updatedAt = ?');
       values.push(Date.now());
-      
       values.push(id);
-      
       await this.db.run(`UPDATE debts SET ${updates.join(', ')} WHERE id = ?`, values);
     }
   }
@@ -4198,7 +4485,19 @@ export class CapacitorDatabase implements Database {
       startDate: row.startDate || undefined,
       termMonths: row.termMonths || undefined,
       updatedAt: row.updatedAt,
-      synced: row.synced === 1
+      synced: row.synced === 1,
+      nextPaymentDate: row.nextPaymentDate || undefined,
+      monthlyPayment: row.monthlyPayment || undefined,
+      paymentType: row.paymentType || undefined,
+      store: row.store || undefined,
+      purchaseDescription: row.purchaseDescription || undefined,
+      installmentsCount: row.installmentsCount || undefined,
+      paidInstallments: row.paidInstallments || undefined,
+      gracePeriodEnd: row.gracePeriodEnd || undefined,
+      paymentDay: row.paymentDay || undefined,
+      minPayment: row.minPayment || undefined,
+      contactInfo: row.contactInfo || undefined,
+      repaymentTerms: row.repaymentTerms || undefined,
     };
   }
 
@@ -4739,4 +5038,4 @@ export function getChartById(id: string): ChartDefinition | undefined {
 =============================================
 Обработано файлов: 37
 Пропущено файлов: 1
-Размер экспорта: 184055 байт
+Размер экспорта: 197753 байт

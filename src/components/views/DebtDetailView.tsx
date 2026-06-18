@@ -12,6 +12,7 @@ interface Props {
   allAccounts: Account[] | undefined;
   onBack: () => void;
   onDataChanged: () => void;
+  onShowSchedule: () => void;
 }
 
 export function DebtDetailView({
@@ -20,6 +21,7 @@ export function DebtDetailView({
   allAccounts,
   onBack,
   onDataChanged,
+  onShowSchedule, // ← ДОБАВЛЕНО: деструктурируем onShowSchedule
 }: Props) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
@@ -127,82 +129,114 @@ export function DebtDetailView({
           </div>
         </div>
 
-        {/* Карточка долга */}
+        {/* НОВАЯ карточка долга */}
         <div className="card mb-4">
-          <p className="text-sm text-muted-foreground mb-1">Текущий долг</p>
+          <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
           <p className="text-3xl font-bold font-mono text-destructive">
             - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
           </p>
           {debt.totalAmount !== debt.currentAmount && (
             <p className="text-xs text-muted-foreground mt-1 font-mono">
-              Было: ₽ {debt.totalAmount.toLocaleString('ru-RU')}
+              Общая сумма выплат: ₽ {debt.totalAmount.toLocaleString('ru-RU')}
             </p>
           )}
         </div>
 
-        {/* Детали кредита */}
-        {/* Параметры обязательства */}
-        <div className="card mb-4">
-          <h3 className="font-semibold text-sm mb-3">
-            {debt.type === 'bank_loan' ? 'Параметры кредита' : 
-            debt.type === 'installment' ? 'Параметры рассрочки' : 
-            debt.type === 'person' ? 'Детали долга' : 'Параметры'}
-          </h3>
-          <div className="space-y-2">
-            {/* Ставка */}
-            {debt.interestRate !== undefined && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Ставка</span>
-                <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
-              </div>
-            )}
-            
-            {/* Срок */}
-            {debt.termMonths && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Срок</span>
-                <span className="text-sm">{debt.termMonths} мес.</span>
-              </div>
-            )}
-            
-            {/* Тип платежа */}
-            {debt.paymentType && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Тип платежа</span>
-                <span className="text-sm">
-                  {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
-                </span>
-              </div>
-            )}
-            
-            {/* Ежемесячный платёж */}
-            {(debt.monthlyPayment || monthlyPayment) && (
-              <div className="flex justify-between items-center pt-2 border-t border-border">
-                <span className="text-sm font-medium">Ежемесячный платёж</span>
-                <span className="font-mono text-lg font-bold text-primary">
-                  ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
-                </span>
-              </div>
-            )}
-            
-            {/* Дата следующего платежа */}
-            {debt.nextPaymentDate && (
-              <div className="flex justify-between items-center pt-2 border-t border-border">
-                <span className="text-sm text-muted-foreground">Следующий платёж</span>
-                <span className={`text-sm font-medium ${
-                  debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
-                    ? 'text-destructive' 
-                    : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
-                      ? 'text-yellow-500'
-                      : 'text-foreground'
-                }`}>
-                  {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
-                  {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
-                </span>
-              </div>
-            )}
+        {/* Параметры обязательства (кликабельный для кредита) */}
+        {debt.type === 'bank_loan' && debt.interestRate && debt.termMonths && (
+          <button
+            onClick={onShowSchedule}
+            className="card mb-4 w-full text-left hover:bg-secondary/30 active:scale-[0.99] transition-all"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm">Параметры кредита</h3>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </div>
+            <div className="space-y-2">
+              {debt.interestRate !== undefined && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Ставка</span>
+                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+                </div>
+              )}
+              {debt.termMonths && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Срок</span>
+                  <span className="text-sm">{debt.termMonths} мес.</span>
+                </div>
+              )}
+              {debt.paymentType && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Тип платежа</span>
+                  <span className="text-sm">
+                    {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
+                  </span>
+                </div>
+              )}
+              {(debt.monthlyPayment || monthlyPayment) && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-sm font-medium">Ежемесячный платёж</span>
+                  <span className="font-mono text-lg font-bold text-primary">
+                    ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
+                  </span>
+                </div>
+              )}
+              {debt.nextPaymentDate && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-sm text-muted-foreground">Следующий платёж</span>
+                  <span className={`text-sm font-medium ${
+                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
+                      ? 'text-destructive'
+                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
+                        ? 'text-yellow-500'
+                        : 'text-foreground'
+                  }`}>
+                    {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
+                    {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </button>
+        )}
+
+        {/* Параметры для НЕ кредита (рассрочка/физлицо/кредитка) */}
+        {debt.type !== 'bank_loan' && (
+          <div className="card mb-4">
+            <h3 className="font-semibold text-sm mb-3">Параметры</h3>
+            <div className="space-y-2">
+              {debt.interestRate !== undefined && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Ставка</span>
+                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+                </div>
+              )}
+              {debt.termMonths && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Срок</span>
+                  <span className="text-sm">{debt.termMonths} мес.</span>
+                </div>
+              )}
+              {debt.nextPaymentDate && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-sm text-muted-foreground">Следующий платёж</span>
+                  <span className={`text-sm font-medium ${
+                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
+                      ? 'text-destructive'
+                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
+                        ? 'text-yellow-500'
+                        : 'text-foreground'
+                  }`}>
+                    {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
+                    {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Рассрочка: магазин и покупка */}
         {debt.type === 'installment' && (debt.store || debt.purchaseDescription || debt.installmentsCount) && (

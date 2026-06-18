@@ -9,8 +9,48 @@ import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 type PickerTarget = "fromAccount" | "toAccount" | "debt" | null;
 
+const SelectButton = ({
+  label,
+  selectedId,
+  type,
+  onClick,
+  placeholder,
+  hint,
+  getSelectedLabel,
+}: {
+  label: string;
+  selectedId: string;
+  type: "account" | "debt";
+  onClick: () => void;
+  placeholder: string;
+  hint?: string;
+  getSelectedLabel: (id: string, type: "account" | "debt") => string;
+}) => (
+  <div>
+    <label className="block text-sm font-medium mb-1">{label}</label>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full px-3 py-2.5 bg-secondary border rounded-lg text-left transition-all flex items-center justify-between ${
+        selectedId
+          ? "border-primary/50 text-foreground"
+          : "border-border text-muted-foreground"
+      }`}
+    >
+      <span className="truncate">
+        {selectedId ? getSelectedLabel(selectedId, type) : placeholder}
+      </span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 ml-2 text-muted-foreground">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </button>
+    {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+  </div>
+);
+
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   useModalBackHandler(onClose);
+  
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
@@ -26,7 +66,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
 
   const isTransferValid = type !== "transfer" || (fromAccountId && toAccountId && fromAccountId !== toAccountId);
 
-  // Формируем опции для пикера счетов
   const getAccountOptions = (excludeId?: string): PickerOption[] => {
     return allAccounts
       .filter((acc) => acc.id !== excludeId)
@@ -38,7 +77,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
       }));
   };
 
-  // Формируем опции для пикера долгов
   const getDebtOptions = (): PickerOption[] => {
     return (debts || []).map((debt) => ({
       id: debt.id,
@@ -50,7 +88,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
     }));
   };
 
-  // Получаем название выбранного элемента
   const getSelectedLabel = (id: string, type: "account" | "debt"): string => {
     if (type === "account") {
       const acc = allAccounts.find((a) => a.id === id);
@@ -62,7 +99,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) {
       alert("Сумма должна быть больше нуля");
@@ -96,52 +133,13 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Универсальный компонент выбора (заменяет <select>)
-  const SelectButton = ({
-    label,
-    selectedId,
-    type,
-    onClick,
-    placeholder,
-    hint,
-  }: {
-    label: string;
-    selectedId: string;
-    type: "account" | "debt";
-    onClick: () => void;
-    placeholder: string;
-    hint?: string;
-  }) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <button
-        type="button"
-        onClick={onClick}
-        className={`w-full px-3 py-2.5 bg-secondary border rounded-lg text-left transition-all flex items-center justify-between ${
-          selectedId
-            ? "border-primary/50 text-foreground"
-            : "border-border text-muted-foreground"
-        }`}
-      >
-        <span className="truncate">
-          {selectedId ? getSelectedLabel(selectedId, type) : placeholder}
-        </span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 ml-2 text-muted-foreground">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </button>
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-    </div>
-  );
-
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
           <h2 className="text-xl font-bold mb-4">Новая операция</h2>
-
+          
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Тип операции */}
             <div>
               <label className="block text-sm font-medium mb-2">Тип операции</label>
               <div className="grid grid-cols-2 gap-2">
@@ -157,7 +155,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => {
                       setType(opt.value as TransactionType);
-                      // Сбрасываем выбранные счета/долги при смене типа
                       setFromAccountId("");
                       setToAccountId("");
                       setDebtId("");
@@ -175,7 +172,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               </div>
             </div>
 
-            {/* Сумма */}
             <div>
               <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
               <input
@@ -190,7 +186,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               />
             </div>
 
-            {/* Категория */}
             {(type === "expense" || type === "income") && (
               <div>
                 <label className="block text-sm font-medium mb-2">Категория</label>
@@ -214,7 +209,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
-            {/* Расход — откуда списать */}
             {type === "expense" && (
               <SelectButton
                 label="Откуда списать"
@@ -223,10 +217,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                 onClick={() => setPickerTarget("fromAccount")}
                 placeholder="Выберите счёт"
                 hint="Можно выбрать кредитку — долг увеличится автоматически"
+                getSelectedLabel={getSelectedLabel}
               />
             )}
 
-            {/* Доход — куда зачислить */}
             {type === "income" && (
               <SelectButton
                 label="Куда зачислить"
@@ -234,10 +228,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                 type="account"
                 onClick={() => setPickerTarget("toAccount")}
                 placeholder="Выберите счёт"
+                getSelectedLabel={getSelectedLabel}
               />
             )}
 
-            {/* Перевод */}
             {type === "transfer" && (
               <>
                 <SelectButton
@@ -246,6 +240,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("fromAccount")}
                   placeholder="Выберите счёт"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 <SelectButton
                   label="Куда"
@@ -253,6 +248,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("toAccount")}
                   placeholder="Выберите счёт"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 {fromAccountId && toAccountId && fromAccountId === toAccountId && (
                   <p className="text-xs text-destructive">Нельзя выбрать один и тот же счёт</p>
@@ -260,7 +256,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               </>
             )}
 
-            {/* Гашение долга */}
             {type === "debt_payment" && (
               <>
                 <SelectButton
@@ -269,6 +264,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="debt"
                   onClick={() => setPickerTarget("debt")}
                   placeholder="Выберите долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 <SelectButton
                   label="Списать со счёта (необязательно)"
@@ -276,11 +272,11 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("fromAccount")}
                   placeholder="Только уменьшить долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
               </>
             )}
 
-            {/* Взять в долг */}
             {type === "debt_borrow" && (
               <>
                 <SelectButton
@@ -289,6 +285,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="debt"
                   onClick={() => setPickerTarget("debt")}
                   placeholder="Выберите долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 <SelectButton
                   label="Зачислить на счёт (необязательно)"
@@ -296,11 +293,11 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("toAccount")}
                   placeholder="Только увеличить долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
               </>
             )}
 
-            {/* Комментарий */}
             <div>
               <label className="block text-sm font-medium mb-1">Комментарий</label>
               <input
@@ -312,7 +309,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               />
             </div>
 
-            {/* Кнопки */}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
@@ -334,7 +330,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {/* Picker модалка */}
       {pickerTarget === "fromAccount" && (
         <PickerModal
           title="Выберите счёт"

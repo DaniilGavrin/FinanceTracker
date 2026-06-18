@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * Хук для обработки аппаратной кнопки "Назад" на Android.
@@ -8,15 +8,19 @@ import { useEffect } from "react";
  * при нажатии "Назад" вызывает onClose.
  */
 export function useModalBackHandler(onClose: () => void, isOpen: boolean = true) {
+  // Сохраняем актуальную версию onClose в ref,
+  // чтобы не добавлять её в зависимости useEffect
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
 
-    // Добавляем запись в историю, чтобы кнопка "Назад" сработала
     const stateKey = `modal-${Date.now()}`;
     window.history.pushState({ modal: stateKey }, "");
 
     const handlePopState = () => {
-      onClose();
+      onCloseRef.current();
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -28,5 +32,5 @@ export function useModalBackHandler(onClose: () => void, isOpen: boolean = true)
         window.history.back();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]); // ← ТОЛЬКО isOpen, без onClose!
 }
