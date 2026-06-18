@@ -47,19 +47,31 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
     const paymentDay = debt.paymentDay || startDate.getDate();
     
     // ========== 1. ПЕРВЫЙ ПЛАТЁЖ (неполный период) ==========
-    const firstPaymentDate = getPaymentDate(
-      startDate.getFullYear(),
-      startDate.getMonth(),
-      31 // Конец месяца открытия
+    let firstPaymentDate: Date;
+
+    if (debt.nextPaymentDate) {
+    // Если указан nextPaymentDate — берём его (как в Т-Банке, ВТБ и т.д.)
+    firstPaymentDate = new Date(debt.nextPaymentDate);
+    firstPaymentDate.setHours(0, 0, 0, 0);
+    
+    // Защита: если дата первого платежа раньше даты открытия — берём дату открытия
+    if (firstPaymentDate.getTime() < startDate.getTime()) {
+        firstPaymentDate = new Date(startDate);
+    }
+    } else {
+    // Fallback: конец месяца открытия (как в Сбере)
+    firstPaymentDate = getPaymentDate(
+        startDate.getFullYear(),
+        startDate.getMonth(),
+        31
     );
     
     // Если первый платёж получился раньше даты открытия — сдвигаем на следующий месяц
     if (firstPaymentDate.getTime() <= startDate.getTime()) {
-      const nextMonth = new Date(startDate);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      firstPaymentDate.setTime(
-        getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay).getTime()
-      );
+        const nextMonth = new Date(startDate);
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        firstPaymentDate = getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay);
+    }
     }
     
     // Проценты за неполный период (с даты открытия до первого платежа)

@@ -389,6 +389,87 @@ export async function linkCreditCardToDebt(accountId: string, debtId: string): P
 }
 
 // ==========================================
+// РАСЧЁТ ОБЩЕЙ СУММЫ ВЫПЛАТ ПО КРЕДИТУ
+// ==========================================
+export function calculateTotalPayments(debt: Debt): number {
+  // Для не-кредитов или кредитов без параметров — возвращаем текущий остаток
+  if (debt.type !== 'bank_loan' || !debt.interestRate || !debt.termMonths || !debt.startDate) {
+    return debt.currentAmount;
+  }
+  
+  const annualRate = debt.interestRate / 100;
+  const monthlyRate = annualRate / 12;
+  const months = debt.termMonths;
+  const principal = debt.totalAmount;
+  
+  // Аннуитетный платёж
+  const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+  
+  let balance = principal;
+  let totalInterest = 0;
+  const startDate = new Date(debt.startDate);
+  const paymentDay = debt.paymentDay || startDate.getDate();
+  
+  // Первый платёж (из nextPaymentDate или конец месяца открытия)
+  let firstPaymentDate: Date;
+  if (debt.nextPaymentDate) {
+    firstPaymentDate = new Date(debt.nextPaymentDate);
+    firstPaymentDate.setHours(0, 0, 0, 0);
+    if (firstPaymentDate.getTime() < startDate.getTime()) {
+      firstPaymentDate = new Date(startDate);
+    }
+  } else {
+    const lastDay = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
+    firstPaymentDate = new Date(startDate.getFullYear(), startDate.getMonth(), Math.min(31, lastDay));
+    if (firstPaymentDate.getTime() <= startDate.getTime()) {
+      const nextMonth = new Date(startDate);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const nextLastDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
+      firstPaymentDate = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(paymentDay, nextLastDay));
+    }
+  }
+  
+  // Проценты за первый неполный период
+  const daysInFirstPeriod = Math.ceil(
+    (firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  totalInterest += principal * annualRate * daysInFirstPeriod / 365;
+  
+  // Полные месяцы (2..termMonths)
+  let prevDate = firstPaymentDate;
+  for (let month = 2; month <= months; month++) {
+    const baseDate = new Date(startDate);
+    baseDate.setMonth(baseDate.getMonth() + month - 1);
+    const lastDay = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0).getDate();
+    const paymentDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), Math.min(paymentDay, lastDay));
+    
+    const daysInPeriod = Math.ceil(
+      (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const interest = balance * annualRate * daysInPeriod / 365;
+    totalInterest += interest;
+    
+    balance -= (annuityPayment - interest);
+    if (balance < 0) balance = 0;
+    prevDate = paymentDate;
+  }
+  
+  // Финальный платёж на дату закрытия
+  const closingDate = new Date(startDate);
+  closingDate.setMonth(closingDate.getMonth() + months);
+  const closingLastDay = new Date(closingDate.getFullYear(), closingDate.getMonth() + 1, 0).getDate();
+  const finalDate = new Date(closingDate.getFullYear(), closingDate.getMonth(), Math.min(startDate.getDate(), closingLastDay));
+  
+  const daysInFinalPeriod = Math.ceil(
+    (finalDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  totalInterest += balance * annualRate * daysInFinalPeriod / 365;
+  
+  return Math.round((principal + totalInterest) * 100) / 100;
+}
+
+
+// ==========================================
 // ЭКСПОРТ/ИМПОРТ
 // ==========================================
 export async function exportData(): Promise<string> {
