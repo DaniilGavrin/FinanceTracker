@@ -60,6 +60,28 @@ export interface Debt {
   termMonths?: number;
   updatedAt: number;
   synced: boolean;
+
+  // === ОБЩИЕ ПОЛЯ ===
+  nextPaymentDate?: number;      // Дата следующего платежа (timestamp)
+  monthlyPayment?: number;       // Ежемесячный платёж (введённый вручную)
+  
+  // === ДЛЯ КРЕДИТОВ (bank_loan) ===
+  paymentType?: 'annuity' | 'differentiated'; // Тип платежа
+  
+  // === ДЛЯ РАССРОЧЕК (installment) ===
+  store?: string;                // Магазин/сервис
+  purchaseDescription?: string;  // Что куплено
+  installmentsCount?: number;    // Общее количество платежей
+  paidInstallments?: number;     // Сколько уже оплачено
+  
+  // === ДЛЯ КРЕДИТНЫХ КАРТ (credit_card) ===
+  gracePeriodEnd?: number;       // Конец льготного периода
+  paymentDay?: number;           // День платежа (1-31)
+  minPayment?: number;           // Минимальный платёж
+  
+  // === ДЛЯ ДОЛГОВ ФИЗЛИЦАМ (person) ===
+  contactInfo?: string;          // Контакты должника
+  repaymentTerms?: string;       // Условия возврата
 }
 
 export type TransactionType = 'income' | 'expense' | 'transfer' | 'debt_payment' | 'debt_borrow';
@@ -107,6 +129,7 @@ export class CapacitorDatabase implements Database {
       
       // Создаём таблицы
       await this.createTables();
+      await this.migrateDebtsTable();
     } catch (error) {
       console.error('Ошибка инициализации БД:', error);
       throw error;
@@ -144,7 +167,19 @@ export class CapacitorDatabase implements Database {
         startDate INTEGER,
         termMonths INTEGER,
         updatedAt INTEGER NOT NULL,
-        synced INTEGER NOT NULL
+        synced INTEGER NOT NULL,
+        nextPaymentDate INTEGER,
+        monthlyPayment REAL,
+        paymentType TEXT,
+        store TEXT,
+        purchaseDescription TEXT,
+        installmentsCount INTEGER,
+        paidInstallments INTEGER,
+        gracePeriodEnd INTEGER,
+        paymentDay INTEGER,
+        minPayment REAL,
+        contactInfo TEXT,
+        repaymentTerms TEXT
       )
     `);
 
@@ -176,6 +211,45 @@ export class CapacitorDatabase implements Database {
     await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_toAccountId ON transactions(toAccountId)`);
     await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_debtId ON transactions(debtId)`);
     await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_transactions_categoryId ON transactions(categoryId)`);
+  }
+
+
+  private async migrateDebtsTable(): Promise<void> {
+    if (!this.db) throw new Error('База данных не инициализирована');
+    
+    // Новые колонки, которые могли отсутствовать в старых версиях
+    const newColumns = [
+      { name: 'nextPaymentDate', type: 'INTEGER' },
+      { name: 'monthlyPayment', type: 'REAL' },
+      { name: 'paymentType', type: 'TEXT' },
+      { name: 'store', type: 'TEXT' },
+      { name: 'purchaseDescription', type: 'TEXT' },
+      { name: 'installmentsCount', type: 'INTEGER' },
+      { name: 'paidInstallments', type: 'INTEGER' },
+      { name: 'gracePeriodEnd', type: 'INTEGER' },
+      { name: 'paymentDay', type: 'INTEGER' },
+      { name: 'minPayment', type: 'REAL' },
+      { name: 'contactInfo', type: 'TEXT' },
+      { name: 'repaymentTerms', type: 'TEXT' },
+    ];
+    
+    // Получаем существующие колонки
+    const tableInfo = await this.db.query('PRAGMA table_info(debts)');
+    const existingColumns = new Set(
+      (tableInfo.values || []).map((col: any) => col.name)
+    );
+    
+    // Добавляем только отсутствующие колонки
+    for (const col of newColumns) {
+      if (!existingColumns.has(col.name)) {
+        try {
+          await this.db.execute(`ALTER TABLE debts ADD COLUMN "${col.name}" ${col.type}`);
+          console.log(`Добавлена колонка: ${col.name}`);
+        } catch (e) {
+          console.warn(`Не удалось добавить колонку ${col.name}:`, e);
+        }
+      }
+    }
   }
 
   async close(): Promise<void> {
@@ -305,10 +379,9 @@ export class CapacitorDatabase implements Database {
 
   async addDebt(debt: Debt): Promise<void> {
     if (!this.db) throw new Error('База данных не инициализирована');
-    
     await this.db.run(
-      `INSERT INTO debts (id, name, type, totalAmount, currentAmount, interestRate, linkedAccountId, bank, startDate, termMonths, updatedAt, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO debts (id, name, type, totalAmount, currentAmount, interestRate, linkedAccountId, bank, startDate, termMonths, updatedAt, synced, nextPaymentDate, monthlyPayment, paymentType, store, purchaseDescription, installmentsCount, paidInstallments, gracePeriodEnd, paymentDay, minPayment, contactInfo, repaymentTerms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         debt.id,
         debt.name,
@@ -321,7 +394,19 @@ export class CapacitorDatabase implements Database {
         debt.startDate || null,
         debt.termMonths || null,
         debt.updatedAt,
-        debt.synced ? 1 : 0
+        debt.synced ? 1 : 0,
+        debt.nextPaymentDate || null,
+        debt.monthlyPayment || null,
+        debt.paymentType || null,
+        debt.store || null,
+        debt.purchaseDescription || null,
+        debt.installmentsCount || null,
+        debt.paidInstallments || null,
+        debt.gracePeriodEnd || null,
+        debt.paymentDay || null,
+        debt.minPayment || null,
+        debt.contactInfo || null,
+        debt.repaymentTerms || null,
       ]
     );
   }
@@ -332,49 +417,41 @@ export class CapacitorDatabase implements Database {
     const updates: string[] = [];
     const values: any[] = [];
     
-    if (data.name !== undefined) {
-      updates.push('name = ?');
-      values.push(data.name);
-    }
-    if (data.type !== undefined) {
-      updates.push('type = ?');
-      values.push(data.type);
-    }
-    if (data.totalAmount !== undefined) {
-      updates.push('totalAmount = ?');
-      values.push(data.totalAmount);
-    }
-    if (data.currentAmount !== undefined) {
-      updates.push('currentAmount = ?');
-      values.push(data.currentAmount);
-    }
-    if (data.interestRate !== undefined) {
-      updates.push('interestRate = ?');
-      values.push(data.interestRate);
-    }
-    if (data.linkedAccountId !== undefined) {
-      updates.push('linkedAccountId = ?');
-      values.push(data.linkedAccountId);
-    }
-    if (data.bank !== undefined) {
-      updates.push('bank = ?');
-      values.push(data.bank);
-    }
-    if (data.startDate !== undefined) {
-      updates.push('startDate = ?');
-      values.push(data.startDate);
-    }
-    if (data.termMonths !== undefined) {
-      updates.push('termMonths = ?');
-      values.push(data.termMonths);
+    const fieldMap: Record<string, string> = {
+      name: 'name',
+      type: 'type',
+      totalAmount: 'totalAmount',
+      currentAmount: 'currentAmount',
+      interestRate: 'interestRate',
+      linkedAccountId: 'linkedAccountId',
+      bank: 'bank',
+      startDate: 'startDate',
+      termMonths: 'termMonths',
+      nextPaymentDate: 'nextPaymentDate',
+      monthlyPayment: 'monthlyPayment',
+      paymentType: 'paymentType',
+      store: 'store',
+      purchaseDescription: 'purchaseDescription',
+      installmentsCount: 'installmentsCount',
+      paidInstallments: 'paidInstallments',
+      gracePeriodEnd: 'gracePeriodEnd',
+      paymentDay: 'paymentDay',
+      minPayment: 'minPayment',
+      contactInfo: 'contactInfo',
+      repaymentTerms: 'repaymentTerms',
+    };
+    
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if ((data as any)[key] !== undefined) {
+        updates.push(`${col} = ?`);
+        values.push((data as any)[key] ?? null);
+      }
     }
     
     if (updates.length > 0) {
       updates.push('updatedAt = ?');
       values.push(Date.now());
-      
       values.push(id);
-      
       await this.db.run(`UPDATE debts SET ${updates.join(', ')} WHERE id = ?`, values);
     }
   }
@@ -397,7 +474,19 @@ export class CapacitorDatabase implements Database {
       startDate: row.startDate || undefined,
       termMonths: row.termMonths || undefined,
       updatedAt: row.updatedAt,
-      synced: row.synced === 1
+      synced: row.synced === 1,
+      nextPaymentDate: row.nextPaymentDate || undefined,
+      monthlyPayment: row.monthlyPayment || undefined,
+      paymentType: row.paymentType || undefined,
+      store: row.store || undefined,
+      purchaseDescription: row.purchaseDescription || undefined,
+      installmentsCount: row.installmentsCount || undefined,
+      paidInstallments: row.paidInstallments || undefined,
+      gracePeriodEnd: row.gracePeriodEnd || undefined,
+      paymentDay: row.paymentDay || undefined,
+      minPayment: row.minPayment || undefined,
+      contactInfo: row.contactInfo || undefined,
+      repaymentTerms: row.repaymentTerms || undefined,
     };
   }
 

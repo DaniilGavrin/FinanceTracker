@@ -86,7 +86,7 @@ export function SettingsView() {
         icon="💾"
         status={overallStatus === "neutral" ? undefined : overallStatus}
         statusText={overallStatusText}
-        defaultOpen={true}
+        defaultOpen={false}
       >
         {storageInfo ? (
           <div className="space-y-4">
