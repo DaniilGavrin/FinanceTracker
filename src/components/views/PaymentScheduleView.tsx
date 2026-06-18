@@ -18,8 +18,7 @@ interface PaymentRow {
   remainingBalance: number;
 }
 
-// Вспомогательная функция: получить корректную дату платежа
-// Если в месяце нет нужного дня — возвращает последний день месяца
+// Получить корректную дату платежа: если в месяце нет нужного дня — последний день месяца
 function getPaymentDate(year: number, month: number, day: number): Date {
   const lastDay = new Date(year, month + 1, 0).getDate();
   const actualDay = Math.min(day, lastDay);
@@ -37,7 +36,7 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
     const principal = debt.totalAmount;
     const monthlyRate = annualRate / 12;
     
-    // Аннуитетный платёж
+    // Аннуитетный платёж (базовый, для полных месяцев)
     const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     
     const rows: PaymentRow[] = [];
@@ -47,12 +46,11 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
     // Платёжный день: из поля paymentDay или из дня месяца даты открытия
     const paymentDay = debt.paymentDay || startDate.getDate();
     
-    // 1. Первый платёж — конец месяца открытия (как в Сбере)
-    // Если дата открытия, например, 2 июня → первый платёж 30 июня (последний день месяца)
+    // ========== 1. ПЕРВЫЙ ПЛАТЁЖ (неполный период) ==========
     const firstPaymentDate = getPaymentDate(
       startDate.getFullYear(),
       startDate.getMonth(),
-      31 // Последний день месяца (31 или меньше)
+      31 // Конец месяца открытия
     );
     
     // Если первый платёж получился раньше даты открытия — сдвигаем на следующий месяц
@@ -79,7 +77,8 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
       remainingBalance: Math.round(balance * 100) / 100,
     });
     
-    // 2. Последующие платежи — каждый месяц на paymentDay (с корректировкой)
+    // ========== 2. ПОЛНЫЕ МЕСЯЦЫ (платежи 2..months) ==========
+    // Это termMonths - 1 платежей (у тебя 11 штук: с июля по май)
     for (let month = 2; month <= months; month++) {
       const baseDate = new Date(startDate);
       baseDate.setMonth(baseDate.getMonth() + month - 1);
@@ -90,23 +89,19 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
         paymentDay
       );
       
-      // Количество дней в этом расчётном периоде (от предыдущего платежа до текущего)
-      const prevDate = rows[rows.length - 1] ? new Date(rows[rows.length - 1].date.split('.').reverse().join('-')) : startDate;
+      // Количество дней от предыдущего платежа до текущего
+      const prevDateStr = rows[rows.length - 1].date;
+      const [d, m, y] = prevDateStr.split('.').map(Number);
+      const prevDate = new Date(y, m - 1, d);
       const daysInPeriod = Math.ceil(
         (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
       );
       
-      // Проценты считаем по дням (как в Сбере)
+      // Проценты по дням (как в Сбере)
       const interest = balance * annualRate * daysInPeriod / 365;
       
       let principalPart = annuityPayment - interest;
       let payment = annuityPayment;
-      
-      // Последний платёж — гасим остаток полностью
-      if (month === months) {
-        principalPart = balance;
-        payment = principalPart + interest;
-      }
       
       balance -= principalPart;
       if (balance < 0) balance = 0;
@@ -120,6 +115,39 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
         remainingBalance: Math.round(balance * 100) / 100,
       });
     }
+    
+    // ========== 3. ФИНАЛЬНЫЙ ПЛАТЁЖ (дата закрытия = дата открытия + termMonths) ==========
+    const closingDate = new Date(startDate);
+    closingDate.setMonth(closingDate.getMonth() + months);
+    
+    // Если в месяце закрытия нет такого дня — берём последний день
+    const finalDate = getPaymentDate(
+      closingDate.getFullYear(),
+      closingDate.getMonth(),
+      startDate.getDate() // День как у даты открытия (2 июня → 2 июня)
+    );
+    
+    // Проценты за период от последнего платежа до даты закрытия
+    const lastRowDateStr = rows[rows.length - 1].date;
+    const [ld, lm, ly] = lastRowDateStr.split('.').map(Number);
+    const lastDate = new Date(ly, lm - 1, ld);
+    const daysInFinalPeriod = Math.ceil(
+      (finalDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const finalInterest = balance * annualRate * daysInFinalPeriod / 365;
+    
+    // Финальный платёж = остаток долга + проценты за период
+    const finalPrincipal = balance;
+    const finalPayment = finalPrincipal + finalInterest;
+    
+    rows.push({
+      month: months + 1,
+      date: finalDate.toLocaleDateString('ru-RU'),
+      payment: Math.round(finalPayment * 100) / 100,
+      interest: Math.round(finalInterest * 100) / 100,
+      principal: Math.round(finalPrincipal * 100) / 100,
+      remainingBalance: 0,
+    });
     
     return rows;
   }, [debt]);
@@ -146,18 +174,18 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
         </div>
         
         <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="card p-3">
-            <p className="text-xs text-muted-foreground">Основной долг</p>
-            <p className="text-lg font-bold font-mono text-accent">₽ {totalPrincipal.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</p>
-          </div>
-          <div className="card p-3">
-            <p className="text-xs text-muted-foreground">Переплата</p>
-            <p className="text-lg font-bold font-mono text-destructive">₽ {totalInterest.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</p>
-          </div>
-          <div className="card p-3">
-            <p className="text-xs text-muted-foreground">Итого выплат</p>
-            <p className="text-lg font-bold font-mono">₽ {totalPayments.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</p>
-          </div>
+            <div className="card p-3">
+                <p className="text-xs text-muted-foreground">Основной долг</p>
+                <p className="text-lg font-bold font-mono text-accent">₽ {totalPrincipal.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="card p-3">
+                <p className="text-xs text-muted-foreground">Переплата</p>
+                <p className="text-lg font-bold font-mono text-destructive">₽ {totalInterest.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="card p-3">
+                <p className="text-xs text-muted-foreground">Итого выплат</p>
+                <p className="text-lg font-bold font-mono">₽ {totalPayments.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
         </div>
         
         <div className="card overflow-hidden p-0">
