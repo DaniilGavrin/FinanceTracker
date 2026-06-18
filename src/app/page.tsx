@@ -15,6 +15,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { HomeView } from "@/components/views/HomeView";
 import { AccountsView } from "@/components/views/AccountsView";
 import { AccountDetailView } from "@/components/views/AccountDetailView";
+import { DebtDetailView } from "@/components/views/DebtDetailView";
 import { TransactionsView } from "@/components/views/TransactionsView";
 import { SettingsView } from "@/components/views/SettingsView";
 
@@ -22,6 +23,7 @@ type Tab = "home" | "accounts" | "transactions" | "settings";
 
 export default function Home() {
   const { accounts, debts, transactions, isReady, refresh } = useDatabase();
+  const [selectedDebtId, setSelectedDebtId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [migrationDone, setMigrationDone] = useState(false);
@@ -54,6 +56,12 @@ export default function Home() {
     if (!selectedAccountId || !accounts) return null;
     return accounts.find(a => a.id === selectedAccountId) || null;
   }, [selectedAccountId, accounts]);
+
+  // Находим выбранный долг
+  const selectedDebt = useMemo(() => {
+    if (!selectedDebtId || !debts) return null;
+    return debts.find(d => d.id === selectedDebtId) || null;
+  }, [selectedDebtId, debts]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -100,6 +108,19 @@ export default function Home() {
     );
   }
 
+  // Если выбран долг — показываем экран деталей долга (БЕЗ header и навигации)
+  if (selectedDebt) {
+    return (
+      <DebtDetailView
+        debt={selectedDebt}
+        transactions={transactions}
+        allAccounts={accounts}
+        onBack={() => setSelectedDebtId(null)}
+        onDataChanged={handleDataChanged}
+      />
+    );
+  }
+
   // Основной UI
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -121,12 +142,12 @@ export default function Home() {
         {activeTab === "home" && <HomeView accounts={accounts} debts={debts} transactions={transactions} />}
         {activeTab === "accounts" && (
           <AccountsView 
-            accounts={accounts} 
-            debts={debts} 
-            onAddAccount={() => setShowAddAccount(true)} 
+            accounts={accounts}
+            debts={debts}
+            onAddAccount={() => setShowAddAccount(true)}
             onAddDebt={() => setShowAddDebt(true)}
-            onSelectAccount={(id) => setSelectedAccountId(id)}
-            onDeleteDebt={(id, name) => handleDeleteRequest('debt', id, name)}
+            onSelectAccount={(id: string) => setSelectedAccountId(id)}
+            onSelectDebt={(id: string) => setSelectedDebtId(id)}
           />
         )}
         {activeTab === "transactions" && (

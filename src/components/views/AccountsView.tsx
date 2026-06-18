@@ -9,10 +9,10 @@ interface Props {
   onAddAccount: () => void;
   onAddDebt: () => void;
   onSelectAccount: (id: string) => void;
-  onDeleteDebt: (id: string, name: string) => void;
+  onSelectDebt: (id: string) => void;
 }
 
-export function AccountsView({ accounts, debts, onAddAccount, onAddDebt, onSelectAccount, onDeleteDebt }: Props) {
+export function AccountsView({ accounts, debts, onAddAccount, onAddDebt, onSelectAccount, onSelectDebt }: Props) {
   return (
     <div className="space-y-6 pb-20">
       {/* Счета */}
@@ -24,9 +24,9 @@ export function AccountsView({ accounts, debts, onAddAccount, onAddDebt, onSelec
         <div className="space-y-3">
           {accounts && accounts.length > 0 ? (
             accounts.map(acc => (
-              <AccountItem 
-                key={acc.id} 
-                account={acc} 
+              <AccountItem
+                key={acc.id}
+                account={acc}
                 onSelect={onSelectAccount}
               />
             ))
@@ -45,10 +45,10 @@ export function AccountsView({ accounts, debts, onAddAccount, onAddDebt, onSelec
         <div className="space-y-3">
           {debts && debts.length > 0 ? (
             debts.map(debt => (
-              <DebtItem 
-                key={debt.id} 
-                debt={debt} 
-                onDelete={onDeleteDebt} 
+              <DebtItem
+                key={debt.id}
+                debt={debt}
+                onSelect={onSelectDebt}
               />
             ))
           ) : (
