@@ -18,6 +18,14 @@ interface PaymentRow {
   remainingBalance: number;
 }
 
+// Вспомогательная функция: получить корректную дату платежа
+// Если в месяце нет нужного дня — возвращает последний день месяца
+function getPaymentDate(year: number, month: number, day: number): Date {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const actualDay = Math.min(day, lastDay);
+  return new Date(year, month, actualDay);
+}
+
 export function PaymentScheduleView({ debt, onBack }: Props) {
   useModalBackHandler(onBack);
   
@@ -25,26 +33,41 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
     if (!debt.interestRate || !debt.termMonths || !debt.startDate) return [];
     
     const annualRate = debt.interestRate / 100;
-    const monthlyRate = annualRate / 12;
     const months = debt.termMonths;
     const principal = debt.totalAmount;
+    const monthlyRate = annualRate / 12;
     
-    // Аннуитетный платёж (базовый)
+    // Аннуитетный платёж
     const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     
     const rows: PaymentRow[] = [];
     let balance = principal;
     const startDate = new Date(debt.startDate);
     
-    // 1. Первый платёж (конец месяца открытия, обычно 30 число)
-    const firstPaymentDate = new Date(startDate);
-    firstPaymentDate.setDate(30);
-    if (firstPaymentDate <= startDate) {
-      firstPaymentDate.setMonth(firstPaymentDate.getMonth() + 1);
-      firstPaymentDate.setDate(30);
+    // Платёжный день: из поля paymentDay или из дня месяца даты открытия
+    const paymentDay = debt.paymentDay || startDate.getDate();
+    
+    // 1. Первый платёж — конец месяца открытия (как в Сбере)
+    // Если дата открытия, например, 2 июня → первый платёж 30 июня (последний день месяца)
+    const firstPaymentDate = getPaymentDate(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      31 // Последний день месяца (31 или меньше)
+    );
+    
+    // Если первый платёж получился раньше даты открытия — сдвигаем на следующий месяц
+    if (firstPaymentDate.getTime() <= startDate.getTime()) {
+      const nextMonth = new Date(startDate);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      firstPaymentDate.setTime(
+        getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay).getTime()
+      );
     }
     
-    const daysInFirstPeriod = Math.ceil((firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Проценты за неполный период (с даты открытия до первого платежа)
+    const daysInFirstPeriod = Math.ceil(
+      (firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
     const firstInterest = principal * annualRate * daysInFirstPeriod / 365;
     
     rows.push({
@@ -56,19 +79,30 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
       remainingBalance: Math.round(balance * 100) / 100,
     });
     
-    // 2. Последующие платежи (полные месяцы)
+    // 2. Последующие платежи — каждый месяц на paymentDay (с корректировкой)
     for (let month = 2; month <= months; month++) {
-      const paymentDate = new Date(startDate);
-      paymentDate.setMonth(paymentDate.getMonth() + month - 1);
-      paymentDate.setDate(30);
+      const baseDate = new Date(startDate);
+      baseDate.setMonth(baseDate.getMonth() + month - 1);
       
-      const daysInMonth = new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, 0).getDate();
-      const interest = balance * annualRate * daysInMonth / 365;
+      const paymentDate = getPaymentDate(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        paymentDay
+      );
+      
+      // Количество дней в этом расчётном периоде (от предыдущего платежа до текущего)
+      const prevDate = rows[rows.length - 1] ? new Date(rows[rows.length - 1].date.split('.').reverse().join('-')) : startDate;
+      const daysInPeriod = Math.ceil(
+        (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      // Проценты считаем по дням (как в Сбере)
+      const interest = balance * annualRate * daysInPeriod / 365;
       
       let principalPart = annuityPayment - interest;
       let payment = annuityPayment;
       
-      // Последний платёж: гасим остаток полностью
+      // Последний платёж — гасим остаток полностью
       if (month === months) {
         principalPart = balance;
         payment = principalPart + interest;

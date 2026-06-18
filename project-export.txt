@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 18.06.2026 13:01:37
+Дата: 18.06.2026 14:20:52
 Структура: src/
 
 =============================================
@@ -2619,45 +2619,29 @@ interface Props {
   onShowSchedule: () => void;
 }
 
-export function DebtDetailView({
-  debt,
-  transactions,
-  allAccounts,
-  onBack,
-  onDataChanged,
-  onShowSchedule, // ← ДОБАВЛЕНО: деструктурируем onShowSchedule
-}: Props) {
+export function DebtDetailView({ debt, transactions, allAccounts, onBack, onDataChanged, onShowSchedule }: Props) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
-
-  // Расчёт ежемесячного платежа (аннуитет)
+  
   const monthlyPayment = useMemo(() => {
-    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || debt.currentAmount <= 0) {
-      return null;
-    }
+    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || debt.totalAmount <= 0) return null;
     
-    const principal = debt.currentAmount;
+    const principal = debt.totalAmount;
     const monthlyRate = debt.interestRate / 100 / 12;
     const months = debt.termMonths;
-    
-    // Формула аннуитетного платежа
     const payment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    
-    return Math.round(payment);
+    return Math.round(payment * 100) / 100;
   }, [debt]);
-
-  // Все транзакции по этому долгу
+  
   const debtTransactions = useMemo(() => {
     if (!transactions) return [];
-    return transactions
-      .filter(tx => tx.debtId === debt.id)
-      .sort((a, b) => b.date - a.date);
+    return transactions.filter(tx => tx.debtId === debt.id).sort((a, b) => b.date - a.date);
   }, [transactions, debt.id]);
-
+  
   const bankLabel = debt.bank === 'sber' ? 'Сбер' : debt.bank === 'tbank' ? 'Т-Банк' : debt.bank === 'person' ? 'Физлицо' : debt.bank === 'other' ? 'Другой' : '';
   const typeLabel = debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : debt.type === 'installment' ? 'Рассрочка' : 'Кредитка';
   const dateLabel = debt.startDate ? new Date(debt.startDate).toLocaleDateString('ru-RU') : '';
-
+  
   const handleDeleteDebt = async () => {
     try {
       await deleteDebt(debt.id);
@@ -2669,7 +2653,7 @@ export function DebtDetailView({
     }
     setShowDeleteDialog(false);
   };
-
+  
   const handleDeleteTx = async () => {
     if (!deleteTxTarget) return;
     try {
@@ -2680,49 +2664,27 @@ export function DebtDetailView({
     }
     setDeleteTxTarget(null);
   };
-
+  
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Кастомный header */}
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
+          <button onClick={onBack} className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             <span className="text-sm font-medium">Назад</span>
           </button>
-          
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => alert("Редактирование будет добавлено в следующей версии")}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors"
-              title="Редактировать"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-              </svg>
+            <button onClick={() => alert("Редактирование будет добавлено позже")} className="w-9 h-9 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors" title="Редактировать">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
             </button>
-            <button
-              onClick={() => setShowDeleteDialog(true)}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive transition-colors"
-              title="Удалить"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+            <button onClick={() => setShowDeleteDialog(true)} className="w-9 h-9 flex items-center justify-center rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive transition-colors" title="Удалить">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
           </div>
         </div>
       </header>
-
-      {/* Основной контент */}
+      
       <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl pb-8">
-        {/* Заголовок */}
         <div className="mb-6">
           <p className="text-xs text-muted-foreground mb-1">{typeLabel}</p>
           <h1 className="text-2xl font-bold tracking-tight">{debt.name}</h1>
@@ -2732,71 +2694,46 @@ export function DebtDetailView({
             {dateLabel && <span>{dateLabel}</span>}
           </div>
         </div>
-
-        {/* НОВАЯ карточка долга */}
+        
         <div className="card mb-4">
           <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
-          <p className="text-3xl font-bold font-mono text-destructive">
-            - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
-          </p>
+          <p className="text-3xl font-bold font-mono text-destructive">- ₽ {debt.currentAmount.toLocaleString('ru-RU')}</p>
           {debt.totalAmount !== debt.currentAmount && (
-            <p className="text-xs text-muted-foreground mt-1 font-mono">
-              Общая сумма выплат: ₽ {debt.totalAmount.toLocaleString('ru-RU')}
-            </p>
+            <p className="text-xs text-muted-foreground mt-1 font-mono">Взято: ₽ {debt.totalAmount.toLocaleString('ru-RU')}</p>
           )}
         </div>
-
-        {/* Параметры обязательства (кликабельный для кредита) */}
+        
         {debt.type === 'bank_loan' && debt.interestRate && debt.termMonths && (
-          <button
-            onClick={onShowSchedule}
-            className="card mb-4 w-full text-left hover:bg-secondary/30 active:scale-[0.99] transition-all"
-          >
+          <button onClick={onShowSchedule} className="card mb-4 w-full text-left hover:bg-secondary/30 active:scale-[0.99] transition-all">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Параметры кредита</h3>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-                <polyline points="9 18 15 12 9 6"></polyline>
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
             <div className="space-y-2">
-              {debt.interestRate !== undefined && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Ставка</span>
-                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
-                </div>
-              )}
-              {debt.termMonths && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Срок</span>
-                  <span className="text-sm">{debt.termMonths} мес.</span>
-                </div>
-              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Ставка</span>
+                <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Срок</span>
+                <span className="text-sm">{debt.termMonths} мес.</span>
+              </div>
               {debt.paymentType && (
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Тип платежа</span>
-                  <span className="text-sm">
-                    {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
-                  </span>
+                  <span className="text-sm">{debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}</span>
                 </div>
               )}
               {(debt.monthlyPayment || monthlyPayment) && (
                 <div className="flex justify-between items-center pt-2 border-t border-border">
                   <span className="text-sm font-medium">Ежемесячный платёж</span>
-                  <span className="font-mono text-lg font-bold text-primary">
-                    ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
-                  </span>
+                  <span className="font-mono text-lg font-bold text-primary">≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}</span>
                 </div>
               )}
               {debt.nextPaymentDate && (
                 <div className="flex justify-between items-center pt-2 border-t border-border">
                   <span className="text-sm text-muted-foreground">Следующий платёж</span>
-                  <span className={`text-sm font-medium ${
-                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
-                      ? 'text-destructive'
-                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
-                        ? 'text-yellow-500'
-                        : 'text-foreground'
-                  }`}>
+                  <span className={`text-sm font-medium ${debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000 ? 'text-destructive' : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000 ? 'text-yellow-500' : 'text-foreground'}`}>
                     {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
                     {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
                   </span>
@@ -2805,140 +2742,35 @@ export function DebtDetailView({
             </div>
           </button>
         )}
-
-        {/* Параметры для НЕ кредита (рассрочка/физлицо/кредитка) */}
+        
         {debt.type !== 'bank_loan' && (
           <div className="card mb-4">
             <h3 className="font-semibold text-sm mb-3">Параметры</h3>
             <div className="space-y-2">
-              {debt.interestRate !== undefined && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Ставка</span>
-                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
-                </div>
-              )}
-              {debt.termMonths && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Срок</span>
-                  <span className="text-sm">{debt.termMonths} мес.</span>
-                </div>
-              )}
-              {debt.nextPaymentDate && (
-                <div className="flex justify-between items-center pt-2 border-t border-border">
-                  <span className="text-sm text-muted-foreground">Следующий платёж</span>
-                  <span className={`text-sm font-medium ${
-                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
-                      ? 'text-destructive'
-                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
-                        ? 'text-yellow-500'
-                        : 'text-foreground'
-                  }`}>
-                    {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
-                    {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
-                  </span>
-                </div>
-              )}
+              {debt.interestRate !== undefined && <div className="flex justify-between items-center"><span className="text-sm text-muted-foreground">Ставка</span><span className="font-mono text-sm">{debt.interestRate}%</span></div>}
+              {debt.termMonths && <div className="flex justify-between items-center"><span className="text-sm text-muted-foreground">Срок</span><span className="text-sm">{debt.termMonths} мес.</span></div>}
             </div>
           </div>
         )}
-
-        {/* Рассрочка: магазин и покупка */}
-        {debt.type === 'installment' && (debt.store || debt.purchaseDescription || debt.installmentsCount) && (
-          <div className="card mb-4">
-            <h3 className="font-semibold text-sm mb-3">Детали рассрочки</h3>
-            <div className="space-y-2">
-              {debt.store && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Магазин</span>
-                  <span className="text-sm font-medium">{debt.store}</span>
-                </div>
-              )}
-              {debt.purchaseDescription && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Покупка</span>
-                  <span className="text-sm font-medium">{debt.purchaseDescription}</span>
-                </div>
-              )}
-              {debt.installmentsCount && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Платежи</span>
-                  <span className="text-sm font-medium">
-                    {debt.paidInstallments || 0} / {debt.installmentsCount}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Физлицо: контакты и условия */}
-        {debt.type === 'person' && (debt.contactInfo || debt.repaymentTerms) && (
-          <div className="card mb-4">
-            <h3 className="font-semibold text-sm mb-3">Контакты и условия</h3>
-            <div className="space-y-2">
-              {debt.contactInfo && (
-                <div>
-                  <span className="text-xs text-muted-foreground">Контакты</span>
-                  <p className="text-sm">{debt.contactInfo}</p>
-                </div>
-              )}
-              {debt.repaymentTerms && (
-                <div>
-                  <span className="text-xs text-muted-foreground">Условия возврата</span>
-                  <p className="text-sm">{debt.repaymentTerms}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* История операций */}
+        
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">
-              История операций ({debtTransactions.length})
-            </h3>
+            <h3 className="font-semibold text-sm">История операций ({debtTransactions.length})</h3>
           </div>
-          
           {debtTransactions.length > 0 ? (
             <div className="space-y-3">
               {debtTransactions.map(tx => (
-                <TransactionItem
-                  key={tx.id}
-                  tx={tx}
-                  accounts={allAccounts}
-                  debts={undefined}
-                  onDelete={(id, name) => setDeleteTxTarget({ id, name })}
-                />
+                <TransactionItem key={tx.id} tx={tx} accounts={allAccounts} debts={undefined} onDelete={(id, name) => setDeleteTxTarget({ id, name })} />
               ))}
             </div>
           ) : (
-            <div className="card text-center py-8">
-              <p className="text-muted-foreground text-sm">Операций по этому долгу пока нет</p>
-            </div>
+            <div className="card text-center py-8"><p className="text-muted-foreground text-sm">Операций по этому долгу пока нет</p></div>
           )}
         </div>
       </main>
-
-      {/* Модалка подтверждения удаления долга */}
-      {showDeleteDialog && (
-        <ConfirmDialog
-          title="Удалить долг?"
-          message={`Долг "${debt.name}" и все связанные операции будут удалены безвозвратно. Это действие нельзя отменить.`}
-          onConfirm={handleDeleteDebt}
-          onCancel={() => setShowDeleteDialog(false)}
-        />
-      )}
-
-      {/* Модалка подтверждения удаления транзакции */}
-      {deleteTxTarget && (
-        <ConfirmDialog
-          title="Удалить операцию?"
-          message={`Операция "${deleteTxTarget.name}" будет удалена, а долг пересчитан. Это действие нельзя отменить.`}
-          onConfirm={handleDeleteTx}
-          onCancel={() => setDeleteTxTarget(null)}
-        />
-      )}
+      
+      {showDeleteDialog && (<ConfirmDialog title="Удалить долг?" message={`Долг "${debt.name}" и все связанные операции будут удалены безвозвратно.`} onConfirm={handleDeleteDebt} onCancel={() => setShowDeleteDialog(false)} />)}
+      {deleteTxTarget && (<ConfirmDialog title="Удалить операцию?" message={`Операция "${deleteTxTarget.name}" будет удалена, а долг пересчитан.`} onConfirm={handleDeleteTx} onCancel={() => setDeleteTxTarget(null)} />)}
     </div>
   );
 }
@@ -3068,6 +2900,7 @@ export function HomeView({ accounts, debts, transactions }: Props) {
 FILE: components\views\PaymentScheduleView.tsx
 ─────────────────────────────────────────
 "use client";
+
 import { useMemo } from "react";
 import { Debt } from "@/db";
 import { useModalBackHandler } from "@/hooks/useModalBackHandler";
@@ -3086,123 +2919,148 @@ interface PaymentRow {
   remainingBalance: number;
 }
 
+// Вспомогательная функция: получить корректную дату платежа
+// Если в месяце нет нужного дня — возвращает последний день месяца
+function getPaymentDate(year: number, month: number, day: number): Date {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const actualDay = Math.min(day, lastDay);
+  return new Date(year, month, actualDay);
+}
+
 export function PaymentScheduleView({ debt, onBack }: Props) {
   useModalBackHandler(onBack);
-
+  
   const schedule = useMemo(() => {
-    if (!debt.interestRate || !debt.termMonths || !debt.startDate) {
-      return [];
-    }
-
+    if (!debt.interestRate || !debt.termMonths || !debt.startDate) return [];
+    
     const annualRate = debt.interestRate / 100;
-    const monthlyRate = annualRate / 12;
     const months = debt.termMonths;
     const principal = debt.totalAmount;
-
-    // Аннуитетный платёж (стандартная формула)
+    const monthlyRate = annualRate / 12;
+    
+    // Аннуитетный платёж
     const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-
+    
     const rows: PaymentRow[] = [];
     let balance = principal;
     const startDate = new Date(debt.startDate);
-
-    // Первый платёж — только проценты за неполный период
-    const firstPaymentDate = new Date(startDate);
-    firstPaymentDate.setDate(30); // Платёж 30 числа
     
-    // Расчёт дней от даты взятия до первого платежа
-    const daysInFirstPeriod = Math.ceil((firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Платёжный день: из поля paymentDay или из дня месяца даты открытия
+    const paymentDay = debt.paymentDay || startDate.getDate();
+    
+    // 1. Первый платёж — конец месяца открытия (как в Сбере)
+    // Если дата открытия, например, 2 июня → первый платёж 30 июня (последний день месяца)
+    const firstPaymentDate = getPaymentDate(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      31 // Последний день месяца (31 или меньше)
+    );
+    
+    // Если первый платёж получился раньше даты открытия — сдвигаем на следующий месяц
+    if (firstPaymentDate.getTime() <= startDate.getTime()) {
+      const nextMonth = new Date(startDate);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      firstPaymentDate.setTime(
+        getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay).getTime()
+      );
+    }
+    
+    // Проценты за неполный период (с даты открытия до первого платежа)
+    const daysInFirstPeriod = Math.ceil(
+      (firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
     const firstInterest = principal * annualRate * daysInFirstPeriod / 365;
-
+    
     rows.push({
       month: 1,
       date: firstPaymentDate.toLocaleDateString('ru-RU'),
       payment: Math.round(firstInterest * 100) / 100,
       interest: Math.round(firstInterest * 100) / 100,
       principal: 0,
-      remainingBalance: principal,
+      remainingBalance: Math.round(balance * 100) / 100,
     });
-
-    // Последующие платежи (полные месяцы)
+    
+    // 2. Последующие платежи — каждый месяц на paymentDay (с корректировкой)
     for (let month = 2; month <= months; month++) {
-      const paymentDate = new Date(startDate);
-      paymentDate.setMonth(paymentDate.getMonth() + month - 1);
-      paymentDate.setDate(30);
-
-      const interest = balance * monthlyRate;
+      const baseDate = new Date(startDate);
+      baseDate.setMonth(baseDate.getMonth() + month - 1);
+      
+      const paymentDate = getPaymentDate(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        paymentDay
+      );
+      
+      // Количество дней в этом расчётном периоде (от предыдущего платежа до текущего)
+      const prevDate = rows[rows.length - 1] ? new Date(rows[rows.length - 1].date.split('.').reverse().join('-')) : startDate;
+      const daysInPeriod = Math.ceil(
+        (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      // Проценты считаем по дням (как в Сбере)
+      const interest = balance * annualRate * daysInPeriod / 365;
+      
       let principalPart = annuityPayment - interest;
       let payment = annuityPayment;
-
-      // Последний платёж — корректируем под остаток
+      
+      // Последний платёж — гасим остаток полностью
       if (month === months) {
         principalPart = balance;
         payment = principalPart + interest;
       }
-
+      
       balance -= principalPart;
-
+      if (balance < 0) balance = 0;
+      
       rows.push({
         month,
         date: paymentDate.toLocaleDateString('ru-RU'),
         payment: Math.round(payment * 100) / 100,
         interest: Math.round(interest * 100) / 100,
         principal: Math.round(principalPart * 100) / 100,
-        remainingBalance: Math.max(0, Math.round(balance * 100) / 100),
+        remainingBalance: Math.round(balance * 100) / 100,
       });
     }
-
+    
     return rows;
   }, [debt]);
-
+  
   const totalInterest = schedule.reduce((sum, row) => sum + row.interest, 0);
   const totalPrincipal = schedule.reduce((sum, row) => sum + row.principal, 0);
   const totalPayments = schedule.reduce((sum, row) => sum + row.payment, 0);
-
+  
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
+          <button onClick={onBack} className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             <span className="text-sm font-medium">Назад</span>
           </button>
         </div>
       </header>
-
+      
       <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl pb-8">
         <div className="mb-6">
           <p className="text-xs text-muted-foreground mb-1">График платежей</p>
           <h1 className="text-2xl font-bold tracking-tight">{debt.name}</h1>
         </div>
-
-        {/* Сводка */}
+        
         <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="card">
+          <div className="card p-3">
             <p className="text-xs text-muted-foreground">Основной долг</p>
-            <p className="text-lg font-bold font-mono text-accent">
-              ₽ {Math.round(totalPrincipal).toLocaleString('ru-RU')}
-            </p>
+            <p className="text-lg font-bold font-mono text-accent">₽ {totalPrincipal.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</p>
           </div>
-          <div className="card">
+          <div className="card p-3">
             <p className="text-xs text-muted-foreground">Переплата</p>
-            <p className="text-lg font-bold font-mono text-destructive">
-              ₽ {Math.round(totalInterest).toLocaleString('ru-RU')}
-            </p>
+            <p className="text-lg font-bold font-mono text-destructive">₽ {totalInterest.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</p>
           </div>
-          <div className="card">
+          <div className="card p-3">
             <p className="text-xs text-muted-foreground">Итого выплат</p>
-            <p className="text-lg font-bold font-mono">
-              ₽ {Math.round(totalPayments).toLocaleString('ru-RU')}
-            </p>
+            <p className="text-lg font-bold font-mono">₽ {totalPayments.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</p>
           </div>
         </div>
-
-        {/* Таблица платежей */}
+        
         <div className="card overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -3212,7 +3070,7 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">Дата</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Платёж</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Проценты</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Основной долг</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Основной</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">Остаток</th>
                 </tr>
               </thead>
@@ -3221,18 +3079,10 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
                   <tr key={row.month} className="border-t border-border">
                     <td className="px-3 py-2 font-medium">{row.month}</td>
                     <td className="px-3 py-2">{row.date}</td>
-                    <td className="px-3 py-2 text-right font-mono">
-                      ₽ {row.payment.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-destructive">
-                      ₽ {row.interest.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-accent">
-                      ₽ {row.principal.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">
-                      ₽ {row.remainingBalance.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                    </td>
+                    <td className="px-3 py-2 text-right font-mono">₽ {row.payment.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right font-mono text-destructive">₽ {row.interest.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right font-mono text-accent">₽ {row.principal.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right font-mono">₽ {row.remainingBalance.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3493,16 +3343,12 @@ FILE: db\index.ts
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, Account, Debt, Transaction, BankType, TransactionType } from '@/lib/database';
 
-// Реэкспортируем типы для обратной совместимости
 export type { Account, Debt, Transaction, BankType, TransactionType };
-
-// Экспортируем singleton базы данных
 export const db = getDatabase();
 
 // ==========================================
 // БАЗОВЫЕ ФУНКЦИИ СОЗДАНИЯ
 // ==========================================
-
 export async function createAccount(data: Omit<Account, 'id' | 'updatedAt' | 'synced'>): Promise<string> {
   const id = uuidv4();
   const now = Date.now();
@@ -3523,22 +3369,17 @@ export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>
   
   let finalData = { ...data };
   
-  // Для кредита рассчитываем totalAmount с учётом процентов
+  // Для кредита рассчитываем ежемесячный платёж, но НЕ перезаписываем totalAmount
   if (data.type === 'bank_loan' && data.interestRate && data.termMonths && data.totalAmount > 0) {
     const monthlyRate = data.interestRate / 100 / 12;
     const months = data.termMonths;
-    const principal = data.totalAmount;
+    const principal = data.totalAmount; // Берём именно ту сумму, которую ввёл пользователь
     
-    // Аннуитетный платёж
+    // Аннуитетный платёж (стандартная формула)
     const monthlyPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    
-    // Общая сумма выплат (с процентами)
-    const totalPayments = monthlyPayment * months;
     
     finalData = {
       ...data,
-      totalAmount: Math.round(totalPayments * 100) / 100,
-      currentAmount: Math.round(totalPayments * 100) / 100,
       monthlyPayment: Math.round(monthlyPayment * 100) / 100,
     };
   }
@@ -3554,9 +3395,8 @@ export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>
 }
 
 // ==========================================
-// КРЕДИТНАЯ КАРТА (с текущим балансом)
+// КРЕДИТНАЯ КАРТА
 // ==========================================
-
 export async function createCreditCard(params: {
   name: string;
   limit: number;
@@ -3568,11 +3408,9 @@ export async function createCreditCard(params: {
   const debtId = uuidv4();
   const now = Date.now();
   
-  // Рассчитываем долг как разницу между лимитом и текущим балансом
   const currentBalance = params.currentBalance ?? params.limit;
   const debtAmount = Math.max(0, params.limit - currentBalance);
-
-  // Создаём долг
+  
   await db.addDebt({
     id: debtId,
     name: params.name,
@@ -3585,8 +3423,7 @@ export async function createCreditCard(params: {
     updatedAt: now,
     synced: false,
   });
-
-  // Создаём счёт с текущим балансом (НЕ с лимитом!)
+  
   await db.addAccount({
     id: accountId,
     name: params.name,
@@ -3599,14 +3436,13 @@ export async function createCreditCard(params: {
     updatedAt: now,
     synced: false,
   });
-
+  
   return { accountId, debtId };
 }
 
 // ==========================================
-// РАССРОЧКА (новый тип счёта)
+// РАССРОЧКА
 // ==========================================
-
 export async function createInstallment(params: {
   name: string;
   limit: number;
@@ -3618,11 +3454,9 @@ export async function createInstallment(params: {
   const debtId = uuidv4();
   const now = Date.now();
   
-  // Рассчитываем долг как разницу между лимитом и текущим балансом
   const currentBalance = params.currentBalance ?? params.limit;
   const debtAmount = Math.max(0, params.limit - currentBalance);
-
-  // Создаём долг типа installment
+  
   await db.addDebt({
     id: debtId,
     name: params.name,
@@ -3635,8 +3469,7 @@ export async function createInstallment(params: {
     updatedAt: now,
     synced: false,
   });
-
-  // Создаём счёт типа installment
+  
   await db.addAccount({
     id: accountId,
     name: params.name,
@@ -3649,14 +3482,13 @@ export async function createInstallment(params: {
     updatedAt: now,
     synced: false,
   });
-
+  
   return { accountId, debtId };
 }
 
 // ==========================================
 // ПРИМЕНЕНИЕ И ОТМЕНА ЭФФЕКТОВ
 // ==========================================
-
 async function applyTransactionEffects(tx: Transaction): Promise<void> {
   switch (tx.type) {
     case 'expense': {
@@ -3664,7 +3496,6 @@ async function applyTransactionEffects(tx: Transaction): Promise<void> {
         const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
           await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
-          
           if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
             const debt = await db.getDebtById(acc.debtId);
             if (debt) {
@@ -3681,9 +3512,7 @@ async function applyTransactionEffects(tx: Transaction): Promise<void> {
     case 'income': {
       if (tx.toAccountId) {
         const acc = await db.getAccountById(tx.toAccountId);
-        if (acc) {
-          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
-        }
+        if (acc) await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
       }
       break;
     }
@@ -3691,7 +3520,6 @@ async function applyTransactionEffects(tx: Transaction): Promise<void> {
       if (tx.fromAccountId && tx.toAccountId) {
         const fromAcc = await db.getAccountById(tx.fromAccountId);
         const toAcc = await db.getAccountById(tx.toAccountId);
-        
         if (fromAcc && toAcc) {
           await db.updateAccount(fromAcc.id, { balance: fromAcc.balance - tx.amount });
           await db.updateAccount(toAcc.id, { balance: toAcc.balance + tx.amount });
@@ -3703,25 +3531,18 @@ async function applyTransactionEffects(tx: Transaction): Promise<void> {
       if (tx.debtId) {
         const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          await db.updateDebt(debt.id, {
-            currentAmount: Math.max(0, debt.currentAmount - tx.amount)
-          });
-          
+          await db.updateDebt(debt.id, { currentAmount: Math.max(0, debt.currentAmount - tx.amount) });
           if (debt.linkedAccountId) {
             const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              await db.updateAccount(acc.id, {
-                balance: Math.min(acc.limit || 0, acc.balance + tx.amount)
-              });
+              await db.updateAccount(acc.id, { balance: Math.min(acc.limit || 0, acc.balance + tx.amount) });
             }
           }
         }
       }
       if (tx.fromAccountId) {
         const acc = await db.getAccountById(tx.fromAccountId);
-        if (acc) {
-          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
-        }
+        if (acc) await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
       }
       break;
     }
@@ -3733,22 +3554,17 @@ async function applyTransactionEffects(tx: Transaction): Promise<void> {
             currentAmount: debt.currentAmount + tx.amount,
             totalAmount: Math.max(debt.totalAmount, debt.currentAmount + tx.amount)
           });
-          
           if (debt.linkedAccountId) {
             const acc = await db.getAccountById(debt.linkedAccountId);
             if (acc) {
-              await db.updateAccount(acc.id, {
-                balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount)
-              });
+              await db.updateAccount(acc.id, { balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount) });
             }
           }
         }
       }
       if (tx.toAccountId) {
         const acc = await db.getAccountById(tx.toAccountId);
-        if (acc) {
-          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
-        }
+        if (acc) await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
       }
       break;
     }
@@ -3762,14 +3578,9 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
         const acc = await db.getAccountById(tx.fromAccountId);
         if (acc) {
           await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
-          
           if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
             const debt = await db.getDebtById(acc.debtId);
-            if (debt) {
-              await db.updateDebt(debt.id, {
-                currentAmount: Math.max(0, debt.currentAmount - tx.amount)
-              });
-            }
+            if (debt) await db.updateDebt(debt.id, { currentAmount: Math.max(0, debt.currentAmount - tx.amount) });
           }
         }
       }
@@ -3778,9 +3589,7 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
     case 'income': {
       if (tx.toAccountId) {
         const acc = await db.getAccountById(tx.toAccountId);
-        if (acc) {
-          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
-        }
+        if (acc) await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
       }
       break;
     }
@@ -3788,7 +3597,6 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
       if (tx.fromAccountId && tx.toAccountId) {
         const fromAcc = await db.getAccountById(tx.fromAccountId);
         const toAcc = await db.getAccountById(tx.toAccountId);
-        
         if (fromAcc && toAcc) {
           await db.updateAccount(fromAcc.id, { balance: fromAcc.balance + tx.amount });
           await db.updateAccount(toAcc.id, { balance: toAcc.balance - tx.amount });
@@ -3800,25 +3608,16 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
       if (tx.debtId) {
         const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          await db.updateDebt(debt.id, {
-            currentAmount: debt.currentAmount + tx.amount
-          });
-          
+          await db.updateDebt(debt.id, { currentAmount: debt.currentAmount + tx.amount });
           if (debt.linkedAccountId) {
             const acc = await db.getAccountById(debt.linkedAccountId);
-            if (acc) {
-              await db.updateAccount(acc.id, {
-                balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount)
-              });
-            }
+            if (acc) await db.updateAccount(acc.id, { balance: Math.max(-(acc.limit || 0), acc.balance - tx.amount) });
           }
         }
       }
       if (tx.fromAccountId) {
         const acc = await db.getAccountById(tx.fromAccountId);
-        if (acc) {
-          await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
-        }
+        if (acc) await db.updateAccount(acc.id, { balance: acc.balance + tx.amount });
       }
       break;
     }
@@ -3826,25 +3625,16 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
       if (tx.debtId) {
         const debt = await db.getDebtById(tx.debtId);
         if (debt) {
-          await db.updateDebt(debt.id, {
-            currentAmount: Math.max(0, debt.currentAmount - tx.amount)
-          });
-          
+          await db.updateDebt(debt.id, { currentAmount: Math.max(0, debt.currentAmount - tx.amount) });
           if (debt.linkedAccountId) {
             const acc = await db.getAccountById(debt.linkedAccountId);
-            if (acc) {
-              await db.updateAccount(acc.id, {
-                balance: Math.min(acc.limit || 0, acc.balance + tx.amount)
-              });
-            }
+            if (acc) await db.updateAccount(acc.id, { balance: Math.min(acc.limit || 0, acc.balance + tx.amount) });
           }
         }
       }
       if (tx.toAccountId) {
         const acc = await db.getAccountById(tx.toAccountId);
-        if (acc) {
-          await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
-        }
+        if (acc) await db.updateAccount(acc.id, { balance: acc.balance - tx.amount });
       }
       break;
     }
@@ -3854,13 +3644,12 @@ async function reverseTransactionEffects(tx: Transaction): Promise<void> {
 // ==========================================
 // СОЗДАНИЕ ТРАНЗАКЦИИ С ЭФФЕКТАМИ
 // ==========================================
-
 export async function createTransactionWithEffects(
   txData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>
 ): Promise<string> {
   const txId = uuidv4();
   const now = Date.now();
-
+  
   const transaction: Transaction = {
     ...txData,
     id: txId,
@@ -3868,17 +3657,16 @@ export async function createTransactionWithEffects(
     updatedAt: now,
     synced: false,
   };
-
+  
   await db.addTransaction(transaction);
   await applyTransactionEffects(transaction);
-
+  
   return txId;
 }
 
 // ==========================================
 // РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ
 // ==========================================
-
 export async function updateAccount(id: string, data: Partial<Omit<Account, 'id' | 'updatedAt' | 'synced'>>): Promise<void> {
   await db.updateAccount(id, data);
 }
@@ -3886,24 +3674,13 @@ export async function updateAccount(id: string, data: Partial<Omit<Account, 'id'
 export async function deleteAccount(id: string): Promise<void> {
   const acc = await db.getAccountById(id);
   if (acc) {
-    // Если это кредитка/рассрочка — удаляем связанный долг
     if ((acc.type === 'credit' || acc.type === 'installment') && acc.debtId) {
       const transactions = await db.getTransactions();
-      for (const tx of transactions) {
-        if (tx.debtId === acc.debtId) {
-          await db.deleteTransaction(tx.id);
-        }
-      }
+      for (const tx of transactions) if (tx.debtId === acc.debtId) await db.deleteTransaction(tx.id);
       await db.deleteDebt(acc.debtId);
     }
-    
     const transactions = await db.getTransactions();
-    for (const tx of transactions) {
-      if (tx.fromAccountId === id || tx.toAccountId === id) {
-        await db.deleteTransaction(tx.id);
-      }
-    }
-    
+    for (const tx of transactions) if (tx.fromAccountId === id || tx.toAccountId === id) await db.deleteTransaction(tx.id);
     await db.deleteAccount(id);
   }
 }
@@ -3915,24 +3692,13 @@ export async function updateDebt(id: string, data: Partial<Omit<Debt, 'id' | 'up
 export async function deleteDebt(id: string): Promise<void> {
   const debt = await db.getDebtById(id);
   if (debt) {
-    // Если это долг кредитки/рассрочки — удаляем связанный счёт
     if ((debt.type === 'credit_card' || debt.type === 'installment') && debt.linkedAccountId) {
       const transactions = await db.getTransactions();
-      for (const tx of transactions) {
-        if (tx.fromAccountId === debt.linkedAccountId || tx.toAccountId === debt.linkedAccountId) {
-          await db.deleteTransaction(tx.id);
-        }
-      }
+      for (const tx of transactions) if (tx.fromAccountId === debt.linkedAccountId || tx.toAccountId === debt.linkedAccountId) await db.deleteTransaction(tx.id);
       await db.deleteAccount(debt.linkedAccountId);
     }
-    
     const transactions = await db.getTransactions();
-    for (const tx of transactions) {
-      if (tx.debtId === id) {
-        await db.deleteTransaction(tx.id);
-      }
-    }
-    
+    for (const tx of transactions) if (tx.debtId === id) await db.deleteTransaction(tx.id);
     await db.deleteDebt(id);
   }
 }
@@ -3940,20 +3706,17 @@ export async function deleteDebt(id: string): Promise<void> {
 export async function updateTransaction(id: string, newData: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'synced'>>): Promise<void> {
   const oldTx = await db.getTransactionById(id);
   if (!oldTx) return;
-
+  
   await reverseTransactionEffects(oldTx);
   await db.updateTransaction(id, newData);
   
   const updatedTx = await db.getTransactionById(id);
-  if (updatedTx) {
-    await applyTransactionEffects(updatedTx);
-  }
+  if (updatedTx) await applyTransactionEffects(updatedTx);
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
   const tx = await db.getTransactionById(id);
   if (!tx) return;
-
   await reverseTransactionEffects(tx);
   await db.deleteTransaction(id);
 }
@@ -3961,7 +3724,6 @@ export async function deleteTransaction(id: string): Promise<void> {
 export async function linkCreditCardToDebt(accountId: string, debtId: string): Promise<void> {
   const acc = await db.getAccountById(accountId);
   const debt = await db.getDebtById(debtId);
-  
   if (acc && debt) {
     await db.updateAccount(accountId, { debtId });
     await db.updateDebt(debtId, { linkedAccountId: accountId });
@@ -3971,7 +3733,6 @@ export async function linkCreditCardToDebt(accountId: string, debtId: string): P
 // ==========================================
 // ЭКСПОРТ/ИМПОРТ
 // ==========================================
-
 export async function exportData(): Promise<string> {
   return await db.exportData();
 }
@@ -5349,4 +5110,4 @@ export function getChartById(id: string): ChartDefinition | undefined {
 =============================================
 Обработано файлов: 39
 Пропущено файлов: 1
-Размер экспорта: 213174 байт
+Размер экспорта: 207696 байт

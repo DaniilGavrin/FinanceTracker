@@ -60,6 +60,7 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
   const [installmentsCount, setInstallmentsCount] = useState("");
   const [contactInfo, setContactInfo] = useState("");
   const [repaymentTerms, setRepaymentTerms] = useState("");
+  const [paymentDay, setPaymentDay] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +85,7 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
       paidInstallments: type === "installment" ? 0 : undefined,
       contactInfo: type === "person" ? contactInfo || undefined : undefined,
       repaymentTerms: type === "person" ? repaymentTerms || undefined : undefined,
+      paymentDay: paymentDay ? parseInt(paymentDay) : undefined,
     });
     onClose();
   };
@@ -191,6 +193,15 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
                 type="number"
                 placeholder="24"
                 min="1"
+              />
+              <InputField
+                label="День платежа (1-31)"
+                value={paymentDay}
+                onChange={setPaymentDay}
+                type="number"
+                placeholder="31"
+                min="1"
+                hint="Если в месяце нет такого дня — сдвинется на последний день месяца"
               />
               <div>
                 <label className="block text-sm font-medium mb-1">Тип платежа</label>
