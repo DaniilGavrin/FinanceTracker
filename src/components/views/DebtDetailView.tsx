@@ -15,45 +15,29 @@ interface Props {
   onShowSchedule: () => void;
 }
 
-export function DebtDetailView({
-  debt,
-  transactions,
-  allAccounts,
-  onBack,
-  onDataChanged,
-  onShowSchedule, // ← ДОБАВЛЕНО: деструктурируем onShowSchedule
-}: Props) {
+export function DebtDetailView({ debt, transactions, allAccounts, onBack, onDataChanged, onShowSchedule }: Props) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
-
-  // Расчёт ежемесячного платежа (аннуитет)
+  
   const monthlyPayment = useMemo(() => {
-    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || debt.currentAmount <= 0) {
-      return null;
-    }
+    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || debt.totalAmount <= 0) return null;
     
-    const principal = debt.currentAmount;
+    const principal = debt.totalAmount;
     const monthlyRate = debt.interestRate / 100 / 12;
     const months = debt.termMonths;
-    
-    // Формула аннуитетного платежа
     const payment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    
-    return Math.round(payment);
+    return Math.round(payment * 100) / 100;
   }, [debt]);
-
-  // Все транзакции по этому долгу
+  
   const debtTransactions = useMemo(() => {
     if (!transactions) return [];
-    return transactions
-      .filter(tx => tx.debtId === debt.id)
-      .sort((a, b) => b.date - a.date);
+    return transactions.filter(tx => tx.debtId === debt.id).sort((a, b) => b.date - a.date);
   }, [transactions, debt.id]);
-
+  
   const bankLabel = debt.bank === 'sber' ? 'Сбер' : debt.bank === 'tbank' ? 'Т-Банк' : debt.bank === 'person' ? 'Физлицо' : debt.bank === 'other' ? 'Другой' : '';
   const typeLabel = debt.type === 'bank_loan' ? 'Кредит' : debt.type === 'person' ? 'Долг физлицу' : debt.type === 'installment' ? 'Рассрочка' : 'Кредитка';
   const dateLabel = debt.startDate ? new Date(debt.startDate).toLocaleDateString('ru-RU') : '';
-
+  
   const handleDeleteDebt = async () => {
     try {
       await deleteDebt(debt.id);
@@ -65,7 +49,7 @@ export function DebtDetailView({
     }
     setShowDeleteDialog(false);
   };
-
+  
   const handleDeleteTx = async () => {
     if (!deleteTxTarget) return;
     try {
@@ -76,49 +60,27 @@ export function DebtDetailView({
     }
     setDeleteTxTarget(null);
   };
-
+  
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Кастомный header */}
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
+          <button onClick={onBack} className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             <span className="text-sm font-medium">Назад</span>
           </button>
-          
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => alert("Редактирование будет добавлено в следующей версии")}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors"
-              title="Редактировать"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-              </svg>
+            <button onClick={() => alert("Редактирование будет добавлено позже")} className="w-9 h-9 flex items-center justify-center rounded-full bg-secondary hover:bg-secondary/80 transition-colors" title="Редактировать">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
             </button>
-            <button
-              onClick={() => setShowDeleteDialog(true)}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive transition-colors"
-              title="Удалить"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+            <button onClick={() => setShowDeleteDialog(true)} className="w-9 h-9 flex items-center justify-center rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive transition-colors" title="Удалить">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
           </div>
         </div>
       </header>
-
-      {/* Основной контент */}
+      
       <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl pb-8">
-        {/* Заголовок */}
         <div className="mb-6">
           <p className="text-xs text-muted-foreground mb-1">{typeLabel}</p>
           <h1 className="text-2xl font-bold tracking-tight">{debt.name}</h1>
@@ -128,71 +90,46 @@ export function DebtDetailView({
             {dateLabel && <span>{dateLabel}</span>}
           </div>
         </div>
-
-        {/* НОВАЯ карточка долга */}
+        
         <div className="card mb-4">
           <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
-          <p className="text-3xl font-bold font-mono text-destructive">
-            - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
-          </p>
+          <p className="text-3xl font-bold font-mono text-destructive">- ₽ {debt.currentAmount.toLocaleString('ru-RU')}</p>
           {debt.totalAmount !== debt.currentAmount && (
-            <p className="text-xs text-muted-foreground mt-1 font-mono">
-              Общая сумма выплат: ₽ {debt.totalAmount.toLocaleString('ru-RU')}
-            </p>
+            <p className="text-xs text-muted-foreground mt-1 font-mono">Взято: ₽ {debt.totalAmount.toLocaleString('ru-RU')}</p>
           )}
         </div>
-
-        {/* Параметры обязательства (кликабельный для кредита) */}
+        
         {debt.type === 'bank_loan' && debt.interestRate && debt.termMonths && (
-          <button
-            onClick={onShowSchedule}
-            className="card mb-4 w-full text-left hover:bg-secondary/30 active:scale-[0.99] transition-all"
-          >
+          <button onClick={onShowSchedule} className="card mb-4 w-full text-left hover:bg-secondary/30 active:scale-[0.99] transition-all">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Параметры кредита</h3>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-                <polyline points="9 18 15 12 9 6"></polyline>
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
             <div className="space-y-2">
-              {debt.interestRate !== undefined && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Ставка</span>
-                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
-                </div>
-              )}
-              {debt.termMonths && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Срок</span>
-                  <span className="text-sm">{debt.termMonths} мес.</span>
-                </div>
-              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Ставка</span>
+                <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Срок</span>
+                <span className="text-sm">{debt.termMonths} мес.</span>
+              </div>
               {debt.paymentType && (
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Тип платежа</span>
-                  <span className="text-sm">
-                    {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
-                  </span>
+                  <span className="text-sm">{debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}</span>
                 </div>
               )}
               {(debt.monthlyPayment || monthlyPayment) && (
                 <div className="flex justify-between items-center pt-2 border-t border-border">
                   <span className="text-sm font-medium">Ежемесячный платёж</span>
-                  <span className="font-mono text-lg font-bold text-primary">
-                    ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
-                  </span>
+                  <span className="font-mono text-lg font-bold text-primary">≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}</span>
                 </div>
               )}
               {debt.nextPaymentDate && (
                 <div className="flex justify-between items-center pt-2 border-t border-border">
                   <span className="text-sm text-muted-foreground">Следующий платёж</span>
-                  <span className={`text-sm font-medium ${
-                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
-                      ? 'text-destructive'
-                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
-                        ? 'text-yellow-500'
-                        : 'text-foreground'
-                  }`}>
+                  <span className={`text-sm font-medium ${debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000 ? 'text-destructive' : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000 ? 'text-yellow-500' : 'text-foreground'}`}>
                     {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
                     {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
                   </span>
@@ -201,140 +138,35 @@ export function DebtDetailView({
             </div>
           </button>
         )}
-
-        {/* Параметры для НЕ кредита (рассрочка/физлицо/кредитка) */}
+        
         {debt.type !== 'bank_loan' && (
           <div className="card mb-4">
             <h3 className="font-semibold text-sm mb-3">Параметры</h3>
             <div className="space-y-2">
-              {debt.interestRate !== undefined && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Ставка</span>
-                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
-                </div>
-              )}
-              {debt.termMonths && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Срок</span>
-                  <span className="text-sm">{debt.termMonths} мес.</span>
-                </div>
-              )}
-              {debt.nextPaymentDate && (
-                <div className="flex justify-between items-center pt-2 border-t border-border">
-                  <span className="text-sm text-muted-foreground">Следующий платёж</span>
-                  <span className={`text-sm font-medium ${
-                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
-                      ? 'text-destructive'
-                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
-                        ? 'text-yellow-500'
-                        : 'text-foreground'
-                  }`}>
-                    {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
-                    {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
-                  </span>
-                </div>
-              )}
+              {debt.interestRate !== undefined && <div className="flex justify-between items-center"><span className="text-sm text-muted-foreground">Ставка</span><span className="font-mono text-sm">{debt.interestRate}%</span></div>}
+              {debt.termMonths && <div className="flex justify-between items-center"><span className="text-sm text-muted-foreground">Срок</span><span className="text-sm">{debt.termMonths} мес.</span></div>}
             </div>
           </div>
         )}
-
-        {/* Рассрочка: магазин и покупка */}
-        {debt.type === 'installment' && (debt.store || debt.purchaseDescription || debt.installmentsCount) && (
-          <div className="card mb-4">
-            <h3 className="font-semibold text-sm mb-3">Детали рассрочки</h3>
-            <div className="space-y-2">
-              {debt.store && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Магазин</span>
-                  <span className="text-sm font-medium">{debt.store}</span>
-                </div>
-              )}
-              {debt.purchaseDescription && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Покупка</span>
-                  <span className="text-sm font-medium">{debt.purchaseDescription}</span>
-                </div>
-              )}
-              {debt.installmentsCount && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Платежи</span>
-                  <span className="text-sm font-medium">
-                    {debt.paidInstallments || 0} / {debt.installmentsCount}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Физлицо: контакты и условия */}
-        {debt.type === 'person' && (debt.contactInfo || debt.repaymentTerms) && (
-          <div className="card mb-4">
-            <h3 className="font-semibold text-sm mb-3">Контакты и условия</h3>
-            <div className="space-y-2">
-              {debt.contactInfo && (
-                <div>
-                  <span className="text-xs text-muted-foreground">Контакты</span>
-                  <p className="text-sm">{debt.contactInfo}</p>
-                </div>
-              )}
-              {debt.repaymentTerms && (
-                <div>
-                  <span className="text-xs text-muted-foreground">Условия возврата</span>
-                  <p className="text-sm">{debt.repaymentTerms}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* История операций */}
+        
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">
-              История операций ({debtTransactions.length})
-            </h3>
+            <h3 className="font-semibold text-sm">История операций ({debtTransactions.length})</h3>
           </div>
-          
           {debtTransactions.length > 0 ? (
             <div className="space-y-3">
               {debtTransactions.map(tx => (
-                <TransactionItem
-                  key={tx.id}
-                  tx={tx}
-                  accounts={allAccounts}
-                  debts={undefined}
-                  onDelete={(id, name) => setDeleteTxTarget({ id, name })}
-                />
+                <TransactionItem key={tx.id} tx={tx} accounts={allAccounts} debts={undefined} onDelete={(id, name) => setDeleteTxTarget({ id, name })} />
               ))}
             </div>
           ) : (
-            <div className="card text-center py-8">
-              <p className="text-muted-foreground text-sm">Операций по этому долгу пока нет</p>
-            </div>
+            <div className="card text-center py-8"><p className="text-muted-foreground text-sm">Операций по этому долгу пока нет</p></div>
           )}
         </div>
       </main>
-
-      {/* Модалка подтверждения удаления долга */}
-      {showDeleteDialog && (
-        <ConfirmDialog
-          title="Удалить долг?"
-          message={`Долг "${debt.name}" и все связанные операции будут удалены безвозвратно. Это действие нельзя отменить.`}
-          onConfirm={handleDeleteDebt}
-          onCancel={() => setShowDeleteDialog(false)}
-        />
-      )}
-
-      {/* Модалка подтверждения удаления транзакции */}
-      {deleteTxTarget && (
-        <ConfirmDialog
-          title="Удалить операцию?"
-          message={`Операция "${deleteTxTarget.name}" будет удалена, а долг пересчитан. Это действие нельзя отменить.`}
-          onConfirm={handleDeleteTx}
-          onCancel={() => setDeleteTxTarget(null)}
-        />
-      )}
+      
+      {showDeleteDialog && (<ConfirmDialog title="Удалить долг?" message={`Долг "${debt.name}" и все связанные операции будут удалены безвозвратно.`} onConfirm={handleDeleteDebt} onCancel={() => setShowDeleteDialog(false)} />)}
+      {deleteTxTarget && (<ConfirmDialog title="Удалить операцию?" message={`Операция "${deleteTxTarget.name}" будет удалена, а долг пересчитан.`} onConfirm={handleDeleteTx} onCancel={() => setDeleteTxTarget(null)} />)}
     </div>
   );
 }

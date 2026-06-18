@@ -1,8 +1,73 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 18.06.2026 10:03:41
+Дата: 18.06.2026 13:01:37
 Структура: src/
 
 =============================================
+
+─────────────────────────────────────────
+FILE: ARCHITECTURE.md
+─────────────────────────────────────────
+# Finance Tracker - Структура проекта
+
+## app/
+- `app/globals.css` - глобальные стили, CSS-переменные темы, Tailwind
+- `app/layout.tsx` - корневой layout приложения, metadata
+- `app/page.tsx` - главная страница, роутинг между вкладками, управление модалками
+
+## components/
+- `components/AddAccountForm.tsx` - форма добавления счёта (дебет/кредит/наличные/рассрочка)
+- `components/AddDebtForm.tsx` - форма добавления обязательства (кредит/рассрочка/физлицо)
+- `components/AddTransactionForm.tsx` - форма новой операции (расход/доход/перевод/гашение долга)
+- `components/CollapsibleSection.tsx` - сворачиваемая секция с заголовком
+- `components/ConfirmDialog.tsx` - диалог подтверждения удаления
+- `components/FAQModal.tsx` - модалка с частыми вопросами
+- `components/PermissionChecker.tsx` - проверка и запрос разрешений (камера, уведомления, сеть, Bluetooth)
+- `components/PickerModal.tsx` - универсальный пикер для выбора счёта/долга
+
+## components/charts/
+- `components/charts/ChartPicker.tsx` - модалка выбора графиков для отображения
+- `components/charts/ChartWidget.tsx` - обёртка для графика с заголовком и кнопкой удаления
+
+## components/dashboard/
+- `components/dashboard/StatsCards.tsx` - 3 карточки статистики (свободные средства/лимит/долг)
+
+## components/layout/
+- `components/layout/BottomNav.tsx` - нижняя навигация с 4 вкладками
+
+## components/lists/
+- `components/lists/AccountItem.tsx` - карточка счёта в списке
+- `components/lists/DebtItem.tsx` - карточка долга в списке
+- `components/lists/TransactionItem.tsx` - карточка транзакции с иконкой и суммой
+
+## components/views/
+- `components/views/AccountDetailView.tsx` - экран деталей счёта с историей операций
+- `components/views/AccountsView.tsx` - список счетов и обязательств
+- `components/views/DebtDetailView.tsx` - экран деталей долга с расчётом платежей
+- `components/views/HomeView.tsx` - главная страница с карточками и графиками
+- `components/views/SettingsView.tsx` - настройки: разрешения, хранилище, очистка
+- `components/views/TransactionsView.tsx` - список всех транзакций с пагинацией
+
+## db/
+- `db/index.ts` - бизнес-логика: создание/удаление/редактирование счетов, долгов, транзакций
+
+## hooks/
+- `hooks/useDatabase.ts` - загрузка данных из БД, функция refresh
+- `hooks/useDeviceInfo.ts` - получение информации об устройстве
+- `hooks/useFinanceMetrics.ts` - расчёт свободных средств, лимита, общего долга
+- `hooks/useModalBackHandler.ts` - обработка аппаратной кнопки "Назад" на Android
+- `hooks/useStorageInfo.ts` - проверка размера БД и свободного места
+
+## lib/
+- `lib/categories.ts` - список категорий расходов и доходов с иконками
+- `lib/database.ts` - слой абстракции БД (SQLite через Capacitor), миграции
+- `lib/migration.ts` - миграция данных с IndexedDB на SQLite
+
+## lib/charts/
+- `lib/charts/BalanceTrendChart.tsx` - линейный график динамики баланса за 30 дней
+- `lib/charts/ExpensesByCategoryChart.tsx` - круговая диаграмма расходов по категориям
+- `lib/charts/MonthlyActivityChart.tsx` - столбчатая диаграмма доходов/расходов за 6 месяцев
+- `lib/charts/registry.ts` - реестр всех доступных графиков
+
 
 ─────────────────────────────────────────
 FILE: app\globals.css
@@ -151,6 +216,7 @@ import { AccountDetailView } from "@/components/views/AccountDetailView";
 import { DebtDetailView } from "@/components/views/DebtDetailView";
 import { TransactionsView } from "@/components/views/TransactionsView";
 import { SettingsView } from "@/components/views/SettingsView";
+import { PaymentScheduleView } from "@/components/views/PaymentScheduleView";
 
 type Tab = "home" | "accounts" | "transactions" | "settings";
 
@@ -167,6 +233,7 @@ export default function Home() {
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'debt' | 'transaction'; id: string; name: string } | null>(null);
+  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
 
   // Миграция из IndexedDB (один раз)
   useEffect(() => {
@@ -243,6 +310,16 @@ export default function Home() {
 
   // Если выбран долг — показываем экран деталей долга (БЕЗ header и навигации)
   if (selectedDebt) {
+    // Если показываем график платежей
+    if (showPaymentSchedule) {
+      return (
+        <PaymentScheduleView
+          debt={selectedDebt}
+          onBack={() => setShowPaymentSchedule(false)}
+        />
+      );
+    }
+    
     return (
       <DebtDetailView
         debt={selectedDebt}
@@ -250,6 +327,7 @@ export default function Home() {
         allAccounts={accounts}
         onBack={() => setSelectedDebtId(null)}
         onDataChanged={handleDataChanged}
+        onShowSchedule={() => setShowPaymentSchedule(true)}  // ← ДОБАВЛЕНО
       />
     );
   }
@@ -514,6 +592,43 @@ import { useState } from "react";
 import { createDebt, BankType } from "@/db";
 import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
+const InputField = ({ 
+  label, 
+  value, 
+  onChange, 
+  type = "text", 
+  placeholder, 
+  hint, 
+  required, 
+  step, 
+  min 
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+  hint?: string;
+  required?: boolean;
+  step?: string;
+  min?: string;
+}) => (
+  <div>
+    <label className="block text-sm font-medium mb-1">{label}</label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      step={step}
+      min={min}
+      className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+      required={required}
+    />
+    {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+  </div>
+);
+
 export function AddDebtForm({ onClose }: { onClose: () => void }) {
   useModalBackHandler(onClose);
   
@@ -525,26 +640,17 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
   const [bank, setBank] = useState<BankType>("sber");
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [termMonths, setTermMonths] = useState("");
-  
-  // Новые поля
   const [nextPaymentDate, setNextPaymentDate] = useState("");
   const [monthlyPayment, setMonthlyPayment] = useState("");
   const [paymentType, setPaymentType] = useState<"annuity" | "differentiated">("annuity");
-  
-  // Для рассрочек
   const [store, setStore] = useState("");
   const [purchaseDescription, setPurchaseDescription] = useState("");
   const [installmentsCount, setInstallmentsCount] = useState("");
-  
-  // Для кредитных карт (создаются через AddAccountForm, но долг может редактироваться)
-  
-  // Для физлиц
   const [contactInfo, setContactInfo] = useState("");
   const [repaymentTerms, setRepaymentTerms] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const total = parseFloat(totalAmount) || 0;
     const current = parseFloat(currentAmount) || total;
 
@@ -567,27 +673,8 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
       contactInfo: type === "person" ? contactInfo || undefined : undefined,
       repaymentTerms: type === "person" ? repaymentTerms || undefined : undefined,
     });
-
     onClose();
   };
-
-  // Общий input-блок
-  const InputField = ({ label, value, onChange, type = "text", placeholder, hint, required, step, min }: any) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        step={step}
-        min={min}
-        className="w-full px-3 py-2 bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-        required={required}
-      />
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -595,7 +682,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
         <h2 className="text-xl font-bold mb-4">Добавить обязательство</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Тип */}
           <div>
             <label className="block text-sm font-medium mb-2">Тип обязательства</label>
             <div className="grid grid-cols-3 gap-2">
@@ -621,7 +707,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Название */}
           <InputField
             label="Название"
             value={name}
@@ -634,7 +719,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             required
           />
 
-          {/* Банк (не для физлиц) */}
           {type !== "person" && (
             <div>
               <label className="block text-sm font-medium mb-1">Банк</label>
@@ -650,7 +734,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Дата начала */}
           <InputField
             label={type === "person" ? "Дата займа" : "Дата открытия"}
             value={startDate}
@@ -659,7 +742,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             required
           />
 
-          {/* Общая сумма */}
           <InputField
             label={type === "person" ? "Сумма долга (₽)" : "Общая сумма (₽)"}
             value={totalAmount}
@@ -670,7 +752,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             required
           />
 
-          {/* Текущий остаток */}
           <InputField
             label="Текущий остаток (₽)"
             value={currentAmount}
@@ -681,9 +762,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             hint="Если только взяли — оставьте пустым"
           />
 
-          {/* === СПЕЦИФИЧНЫЕ ПОЛЯ ПО ТИПАМ === */}
-          
-          {/* КРЕДИТ */}
           {type === "bank_loan" && (
             <>
               <InputField
@@ -730,7 +808,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {/* РАССРОЧКА */}
           {type === "installment" && (
             <>
               <InputField
@@ -770,7 +847,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {/* ФИЗЛИЦО */}
           {type === "person" && (
             <>
               <InputField
@@ -798,7 +874,6 @@ export function AddDebtForm({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          {/* Кнопки */}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Отмена
@@ -828,8 +903,48 @@ import { useModalBackHandler } from "@/hooks/useModalBackHandler";
 
 type PickerTarget = "fromAccount" | "toAccount" | "debt" | null;
 
+const SelectButton = ({
+  label,
+  selectedId,
+  type,
+  onClick,
+  placeholder,
+  hint,
+  getSelectedLabel,
+}: {
+  label: string;
+  selectedId: string;
+  type: "account" | "debt";
+  onClick: () => void;
+  placeholder: string;
+  hint?: string;
+  getSelectedLabel: (id: string, type: "account" | "debt") => string;
+}) => (
+  <div>
+    <label className="block text-sm font-medium mb-1">{label}</label>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full px-3 py-2.5 bg-secondary border rounded-lg text-left transition-all flex items-center justify-between ${
+        selectedId
+          ? "border-primary/50 text-foreground"
+          : "border-border text-muted-foreground"
+      }`}
+    >
+      <span className="truncate">
+        {selectedId ? getSelectedLabel(selectedId, type) : placeholder}
+      </span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 ml-2 text-muted-foreground">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </button>
+    {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+  </div>
+);
+
 export function AddTransactionForm({ onClose }: { onClose: () => void }) {
   useModalBackHandler(onClose);
+  
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
@@ -845,7 +960,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
 
   const isTransferValid = type !== "transfer" || (fromAccountId && toAccountId && fromAccountId !== toAccountId);
 
-  // Формируем опции для пикера счетов
   const getAccountOptions = (excludeId?: string): PickerOption[] => {
     return allAccounts
       .filter((acc) => acc.id !== excludeId)
@@ -857,7 +971,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
       }));
   };
 
-  // Формируем опции для пикера долгов
   const getDebtOptions = (): PickerOption[] => {
     return (debts || []).map((debt) => ({
       id: debt.id,
@@ -869,7 +982,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
     }));
   };
 
-  // Получаем название выбранного элемента
   const getSelectedLabel = (id: string, type: "account" | "debt"): string => {
     if (type === "account") {
       const acc = allAccounts.find((a) => a.id === id);
@@ -881,7 +993,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) {
       alert("Сумма должна быть больше нуля");
@@ -915,52 +1027,13 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Универсальный компонент выбора (заменяет <select>)
-  const SelectButton = ({
-    label,
-    selectedId,
-    type,
-    onClick,
-    placeholder,
-    hint,
-  }: {
-    label: string;
-    selectedId: string;
-    type: "account" | "debt";
-    onClick: () => void;
-    placeholder: string;
-    hint?: string;
-  }) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <button
-        type="button"
-        onClick={onClick}
-        className={`w-full px-3 py-2.5 bg-secondary border rounded-lg text-left transition-all flex items-center justify-between ${
-          selectedId
-            ? "border-primary/50 text-foreground"
-            : "border-border text-muted-foreground"
-        }`}
-      >
-        <span className="truncate">
-          {selectedId ? getSelectedLabel(selectedId, type) : placeholder}
-        </span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 ml-2 text-muted-foreground">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </button>
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-    </div>
-  );
-
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
           <h2 className="text-xl font-bold mb-4">Новая операция</h2>
-
+          
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Тип операции */}
             <div>
               <label className="block text-sm font-medium mb-2">Тип операции</label>
               <div className="grid grid-cols-2 gap-2">
@@ -976,7 +1049,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => {
                       setType(opt.value as TransactionType);
-                      // Сбрасываем выбранные счета/долги при смене типа
                       setFromAccountId("");
                       setToAccountId("");
                       setDebtId("");
@@ -994,7 +1066,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               </div>
             </div>
 
-            {/* Сумма */}
             <div>
               <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
               <input
@@ -1009,7 +1080,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               />
             </div>
 
-            {/* Категория */}
             {(type === "expense" || type === "income") && (
               <div>
                 <label className="block text-sm font-medium mb-2">Категория</label>
@@ -1033,7 +1103,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
-            {/* Расход — откуда списать */}
             {type === "expense" && (
               <SelectButton
                 label="Откуда списать"
@@ -1042,10 +1111,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                 onClick={() => setPickerTarget("fromAccount")}
                 placeholder="Выберите счёт"
                 hint="Можно выбрать кредитку — долг увеличится автоматически"
+                getSelectedLabel={getSelectedLabel}
               />
             )}
 
-            {/* Доход — куда зачислить */}
             {type === "income" && (
               <SelectButton
                 label="Куда зачислить"
@@ -1053,10 +1122,10 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                 type="account"
                 onClick={() => setPickerTarget("toAccount")}
                 placeholder="Выберите счёт"
+                getSelectedLabel={getSelectedLabel}
               />
             )}
 
-            {/* Перевод */}
             {type === "transfer" && (
               <>
                 <SelectButton
@@ -1065,6 +1134,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("fromAccount")}
                   placeholder="Выберите счёт"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 <SelectButton
                   label="Куда"
@@ -1072,6 +1142,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("toAccount")}
                   placeholder="Выберите счёт"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 {fromAccountId && toAccountId && fromAccountId === toAccountId && (
                   <p className="text-xs text-destructive">Нельзя выбрать один и тот же счёт</p>
@@ -1079,7 +1150,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               </>
             )}
 
-            {/* Гашение долга */}
             {type === "debt_payment" && (
               <>
                 <SelectButton
@@ -1088,6 +1158,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="debt"
                   onClick={() => setPickerTarget("debt")}
                   placeholder="Выберите долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 <SelectButton
                   label="Списать со счёта (необязательно)"
@@ -1095,11 +1166,11 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("fromAccount")}
                   placeholder="Только уменьшить долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
               </>
             )}
 
-            {/* Взять в долг */}
             {type === "debt_borrow" && (
               <>
                 <SelectButton
@@ -1108,6 +1179,7 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="debt"
                   onClick={() => setPickerTarget("debt")}
                   placeholder="Выберите долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
                 <SelectButton
                   label="Зачислить на счёт (необязательно)"
@@ -1115,11 +1187,11 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
                   type="account"
                   onClick={() => setPickerTarget("toAccount")}
                   placeholder="Только увеличить долг"
+                  getSelectedLabel={getSelectedLabel}
                 />
               </>
             )}
 
-            {/* Комментарий */}
             <div>
               <label className="block text-sm font-medium mb-1">Комментарий</label>
               <input
@@ -1131,7 +1203,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
               />
             </div>
 
-            {/* Кнопки */}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
@@ -1153,7 +1224,6 @@ export function AddTransactionForm({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {/* Picker модалка */}
       {pickerTarget === "fromAccount" && (
         <PickerModal
           title="Выберите счёт"
@@ -2546,6 +2616,7 @@ interface Props {
   allAccounts: Account[] | undefined;
   onBack: () => void;
   onDataChanged: () => void;
+  onShowSchedule: () => void;
 }
 
 export function DebtDetailView({
@@ -2554,6 +2625,7 @@ export function DebtDetailView({
   allAccounts,
   onBack,
   onDataChanged,
+  onShowSchedule, // ← ДОБАВЛЕНО: деструктурируем onShowSchedule
 }: Props) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
@@ -2661,82 +2733,114 @@ export function DebtDetailView({
           </div>
         </div>
 
-        {/* Карточка долга */}
+        {/* НОВАЯ карточка долга */}
         <div className="card mb-4">
-          <p className="text-sm text-muted-foreground mb-1">Текущий долг</p>
+          <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
           <p className="text-3xl font-bold font-mono text-destructive">
             - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
           </p>
           {debt.totalAmount !== debt.currentAmount && (
             <p className="text-xs text-muted-foreground mt-1 font-mono">
-              Было: ₽ {debt.totalAmount.toLocaleString('ru-RU')}
+              Общая сумма выплат: ₽ {debt.totalAmount.toLocaleString('ru-RU')}
             </p>
           )}
         </div>
 
-        {/* Детали кредита */}
-        {/* Параметры обязательства */}
-        <div className="card mb-4">
-          <h3 className="font-semibold text-sm mb-3">
-            {debt.type === 'bank_loan' ? 'Параметры кредита' : 
-            debt.type === 'installment' ? 'Параметры рассрочки' : 
-            debt.type === 'person' ? 'Детали долга' : 'Параметры'}
-          </h3>
-          <div className="space-y-2">
-            {/* Ставка */}
-            {debt.interestRate !== undefined && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Ставка</span>
-                <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
-              </div>
-            )}
-            
-            {/* Срок */}
-            {debt.termMonths && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Срок</span>
-                <span className="text-sm">{debt.termMonths} мес.</span>
-              </div>
-            )}
-            
-            {/* Тип платежа */}
-            {debt.paymentType && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Тип платежа</span>
-                <span className="text-sm">
-                  {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
-                </span>
-              </div>
-            )}
-            
-            {/* Ежемесячный платёж */}
-            {(debt.monthlyPayment || monthlyPayment) && (
-              <div className="flex justify-between items-center pt-2 border-t border-border">
-                <span className="text-sm font-medium">Ежемесячный платёж</span>
-                <span className="font-mono text-lg font-bold text-primary">
-                  ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
-                </span>
-              </div>
-            )}
-            
-            {/* Дата следующего платежа */}
-            {debt.nextPaymentDate && (
-              <div className="flex justify-between items-center pt-2 border-t border-border">
-                <span className="text-sm text-muted-foreground">Следующий платёж</span>
-                <span className={`text-sm font-medium ${
-                  debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
-                    ? 'text-destructive' 
-                    : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
-                      ? 'text-yellow-500'
-                      : 'text-foreground'
-                }`}>
-                  {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
-                  {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
-                </span>
-              </div>
-            )}
+        {/* Параметры обязательства (кликабельный для кредита) */}
+        {debt.type === 'bank_loan' && debt.interestRate && debt.termMonths && (
+          <button
+            onClick={onShowSchedule}
+            className="card mb-4 w-full text-left hover:bg-secondary/30 active:scale-[0.99] transition-all"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm">Параметры кредита</h3>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </div>
+            <div className="space-y-2">
+              {debt.interestRate !== undefined && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Ставка</span>
+                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+                </div>
+              )}
+              {debt.termMonths && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Срок</span>
+                  <span className="text-sm">{debt.termMonths} мес.</span>
+                </div>
+              )}
+              {debt.paymentType && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Тип платежа</span>
+                  <span className="text-sm">
+                    {debt.paymentType === 'annuity' ? 'Аннуитетный' : 'Дифференцированный'}
+                  </span>
+                </div>
+              )}
+              {(debt.monthlyPayment || monthlyPayment) && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-sm font-medium">Ежемесячный платёж</span>
+                  <span className="font-mono text-lg font-bold text-primary">
+                    ≈ ₽ {(debt.monthlyPayment || monthlyPayment || 0).toLocaleString('ru-RU')}
+                  </span>
+                </div>
+              )}
+              {debt.nextPaymentDate && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-sm text-muted-foreground">Следующий платёж</span>
+                  <span className={`text-sm font-medium ${
+                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
+                      ? 'text-destructive'
+                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
+                        ? 'text-yellow-500'
+                        : 'text-foreground'
+                  }`}>
+                    {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
+                    {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </button>
+        )}
+
+        {/* Параметры для НЕ кредита (рассрочка/физлицо/кредитка) */}
+        {debt.type !== 'bank_loan' && (
+          <div className="card mb-4">
+            <h3 className="font-semibold text-sm mb-3">Параметры</h3>
+            <div className="space-y-2">
+              {debt.interestRate !== undefined && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Ставка</span>
+                  <span className="font-mono text-sm">{debt.interestRate}% годовых</span>
+                </div>
+              )}
+              {debt.termMonths && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Срок</span>
+                  <span className="text-sm">{debt.termMonths} мес.</span>
+                </div>
+              )}
+              {debt.nextPaymentDate && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-sm text-muted-foreground">Следующий платёж</span>
+                  <span className={`text-sm font-medium ${
+                    debt.nextPaymentDate < Date.now() + 7 * 24 * 60 * 60 * 1000
+                      ? 'text-destructive'
+                      : debt.nextPaymentDate < Date.now() + 30 * 24 * 60 * 60 * 1000
+                        ? 'text-yellow-500'
+                        : 'text-foreground'
+                  }`}>
+                    {new Date(debt.nextPaymentDate).toLocaleDateString('ru-RU')}
+                    {debt.nextPaymentDate < Date.now() && ' ⚠️ ПРОСРОЧЕНО'}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Рассрочка: магазин и покупка */}
         {debt.type === 'installment' && (debt.store || debt.purchaseDescription || debt.installmentsCount) && (
@@ -2955,6 +3059,187 @@ export function HomeView({ accounts, debts, transactions }: Props) {
           onClose={() => setShowPicker(false)}
         />
       )}
+    </div>
+  );
+}
+
+
+─────────────────────────────────────────
+FILE: components\views\PaymentScheduleView.tsx
+─────────────────────────────────────────
+"use client";
+import { useMemo } from "react";
+import { Debt } from "@/db";
+import { useModalBackHandler } from "@/hooks/useModalBackHandler";
+
+interface Props {
+  debt: Debt;
+  onBack: () => void;
+}
+
+interface PaymentRow {
+  month: number;
+  date: string;
+  payment: number;
+  interest: number;
+  principal: number;
+  remainingBalance: number;
+}
+
+export function PaymentScheduleView({ debt, onBack }: Props) {
+  useModalBackHandler(onBack);
+
+  const schedule = useMemo(() => {
+    if (!debt.interestRate || !debt.termMonths || !debt.startDate) {
+      return [];
+    }
+
+    const annualRate = debt.interestRate / 100;
+    const monthlyRate = annualRate / 12;
+    const months = debt.termMonths;
+    const principal = debt.totalAmount;
+
+    // Аннуитетный платёж (стандартная формула)
+    const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+
+    const rows: PaymentRow[] = [];
+    let balance = principal;
+    const startDate = new Date(debt.startDate);
+
+    // Первый платёж — только проценты за неполный период
+    const firstPaymentDate = new Date(startDate);
+    firstPaymentDate.setDate(30); // Платёж 30 числа
+    
+    // Расчёт дней от даты взятия до первого платежа
+    const daysInFirstPeriod = Math.ceil((firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const firstInterest = principal * annualRate * daysInFirstPeriod / 365;
+
+    rows.push({
+      month: 1,
+      date: firstPaymentDate.toLocaleDateString('ru-RU'),
+      payment: Math.round(firstInterest * 100) / 100,
+      interest: Math.round(firstInterest * 100) / 100,
+      principal: 0,
+      remainingBalance: principal,
+    });
+
+    // Последующие платежи (полные месяцы)
+    for (let month = 2; month <= months; month++) {
+      const paymentDate = new Date(startDate);
+      paymentDate.setMonth(paymentDate.getMonth() + month - 1);
+      paymentDate.setDate(30);
+
+      const interest = balance * monthlyRate;
+      let principalPart = annuityPayment - interest;
+      let payment = annuityPayment;
+
+      // Последний платёж — корректируем под остаток
+      if (month === months) {
+        principalPart = balance;
+        payment = principalPart + interest;
+      }
+
+      balance -= principalPart;
+
+      rows.push({
+        month,
+        date: paymentDate.toLocaleDateString('ru-RU'),
+        payment: Math.round(payment * 100) / 100,
+        interest: Math.round(interest * 100) / 100,
+        principal: Math.round(principalPart * 100) / 100,
+        remainingBalance: Math.max(0, Math.round(balance * 100) / 100),
+      });
+    }
+
+    return rows;
+  }, [debt]);
+
+  const totalInterest = schedule.reduce((sum, row) => sum + row.interest, 0);
+  const totalPrincipal = schedule.reduce((sum, row) => sum + row.principal, 0);
+  const totalPayments = schedule.reduce((sum, row) => sum + row.payment, 0);
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 text-primary hover:opacity-80 transition-opacity"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            <span className="text-sm font-medium">Назад</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 container mx-auto px-4 py-6 max-w-2xl pb-8">
+        <div className="mb-6">
+          <p className="text-xs text-muted-foreground mb-1">График платежей</p>
+          <h1 className="text-2xl font-bold tracking-tight">{debt.name}</h1>
+        </div>
+
+        {/* Сводка */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="card">
+            <p className="text-xs text-muted-foreground">Основной долг</p>
+            <p className="text-lg font-bold font-mono text-accent">
+              ₽ {Math.round(totalPrincipal).toLocaleString('ru-RU')}
+            </p>
+          </div>
+          <div className="card">
+            <p className="text-xs text-muted-foreground">Переплата</p>
+            <p className="text-lg font-bold font-mono text-destructive">
+              ₽ {Math.round(totalInterest).toLocaleString('ru-RU')}
+            </p>
+          </div>
+          <div className="card">
+            <p className="text-xs text-muted-foreground">Итого выплат</p>
+            <p className="text-lg font-bold font-mono">
+              ₽ {Math.round(totalPayments).toLocaleString('ru-RU')}
+            </p>
+          </div>
+        </div>
+
+        {/* Таблица платежей */}
+        <div className="card overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">№</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Дата</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Платёж</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Проценты</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Основной долг</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Остаток</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.map((row) => (
+                  <tr key={row.month} className="border-t border-border">
+                    <td className="px-3 py-2 font-medium">{row.month}</td>
+                    <td className="px-3 py-2">{row.date}</td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      ₽ {row.payment.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-destructive">
+                      ₽ {row.interest.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-accent">
+                      ₽ {row.principal.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      ₽ {row.remainingBalance.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
@@ -3236,8 +3521,30 @@ export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>
   const id = uuidv4();
   const now = Date.now();
   
+  let finalData = { ...data };
+  
+  // Для кредита рассчитываем totalAmount с учётом процентов
+  if (data.type === 'bank_loan' && data.interestRate && data.termMonths && data.totalAmount > 0) {
+    const monthlyRate = data.interestRate / 100 / 12;
+    const months = data.termMonths;
+    const principal = data.totalAmount;
+    
+    // Аннуитетный платёж
+    const monthlyPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+    
+    // Общая сумма выплат (с процентами)
+    const totalPayments = monthlyPayment * months;
+    
+    finalData = {
+      ...data,
+      totalAmount: Math.round(totalPayments * 100) / 100,
+      currentAmount: Math.round(totalPayments * 100) / 100,
+      monthlyPayment: Math.round(monthlyPayment * 100) / 100,
+    };
+  }
+  
   await db.addDebt({
-    ...data,
+    ...finalData,
     id,
     updatedAt: now,
     synced: false,
@@ -3798,7 +4105,7 @@ FILE: hooks\useModalBackHandler.ts
 ─────────────────────────────────────────
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * Хук для обработки аппаратной кнопки "Назад" на Android.
@@ -3806,15 +4113,19 @@ import { useEffect } from "react";
  * при нажатии "Назад" вызывает onClose.
  */
 export function useModalBackHandler(onClose: () => void, isOpen: boolean = true) {
+  // Сохраняем актуальную версию onClose в ref,
+  // чтобы не добавлять её в зависимости useEffect
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
 
-    // Добавляем запись в историю, чтобы кнопка "Назад" сработала
     const stateKey = `modal-${Date.now()}`;
     window.history.pushState({ modal: stateKey }, "");
 
     const handlePopState = () => {
-      onClose();
+      onCloseRef.current();
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -3826,7 +4137,7 @@ export function useModalBackHandler(onClose: () => void, isOpen: boolean = true)
         window.history.back();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]); // ← ТОЛЬКО isOpen, без onClose!
 }
 
 
@@ -5036,6 +5347,6 @@ export function getChartById(id: string): ChartDefinition | undefined {
 
 
 =============================================
-Обработано файлов: 37
+Обработано файлов: 39
 Пропущено файлов: 1
-Размер экспорта: 197753 байт
+Размер экспорта: 213174 байт
