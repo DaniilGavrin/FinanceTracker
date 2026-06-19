@@ -296,9 +296,9 @@ TQ3pKUs7Wox8yyeSdTvjw4pfEBVCU57Bm6
 
 **Даниил** — разработчик, владелец собственного ИП по разработке ПО и игр, а также мастерской по ремонту.
 
-- 🌐 Сайт: [bytewizard.ru](https://bytewizard.ru)
-- 📧 Email: [support@bytewizard.ru](mailto:support@bytewizard.ru)
-- 💬 Telegram: [@bytewizard](https://t.me/bytewizard)
+- 🌐 Сайт: [shop.bytewizard.ru](https://shop.bytewizard.ru)
+- 📧 Email: [daniilgavrin@bytewizard.ru](mailto:daniilgavrin@bytewizard.ru)
+- 💬 Telegram: [@danya_gavrin](https://t.me/danya_gavrin)
 
 ---
 
