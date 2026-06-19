@@ -8,7 +8,7 @@ import { CollapsibleSection } from "../CollapsibleSection";
 import { useStorageInfo } from "@/hooks/useStorageInfo";
 import { useDeviceInfo } from "@/hooks/useDeviceInfo";
 
-export function SettingsView() {
+export function SettingsView({ onShowSupport }: { onShowSupport: () => void }) {
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const storageInfo = useStorageInfo();
   const deviceInfo = useDeviceInfo();
@@ -69,6 +69,37 @@ export function SettingsView() {
 
   return (
     <div className="space-y-4 pb-20">
+      {/* Плашка "Поддержать разработку" */}
+      <button
+        onClick={onShowSupport}
+        className="w-full card bg-gradient-to-br from-primary/15 via-primary/5 to-accent/10 border-primary/30 hover:border-primary/60 active:scale-[0.99] transition-all text-left group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full bg-primary/15 flex items-center justify-center text-2xl shrink-0">
+            ☕
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm">Поддержать разработку</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Помогите проекту расти и развиваться
+            </p>
+          </div>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-muted-foreground group-hover:translate-x-0.5 transition-transform"
+          >
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </div>
+      </button>
       {/* Панель разрешений */}
       <CollapsibleSection
         title="Разрешения приложения"

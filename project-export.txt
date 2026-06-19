@@ -1,5 +1,5 @@
 ﻿=== Finance Tracker Project Export ===
-Дата: 18.06.2026 15:21:32
+Дата: 19.06.2026 13:06:09
 Структура: src/
 
 =============================================
@@ -1754,9 +1754,7 @@ export function PermissionChecker({ showDeviceInfo = true }: Props) {
 FILE: components\PickerModal.tsx
 ─────────────────────────────────────────
 "use client";
-import { useModalBackHandler } from "@/hooks/useModalBackHandler";
-
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 export interface PickerOption {
   id: string;
@@ -1786,9 +1784,15 @@ export function PickerModal({
   searchPlaceholder = "Поиск...",
   emptyText = "Ничего не найдено",
 }: Props) {
-  useModalBackHandler(onClose);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+  
   const [search, setSearch] = useState("");
-
   const filteredOptions = useMemo(() => {
     if (!search.trim()) return options;
     const query = search.toLowerCase();
@@ -1798,14 +1802,14 @@ export function PickerModal({
         opt.subtitle?.toLowerCase().includes(query)
     );
   }, [options, search]);
-
+  
   const badgeColors = {
     default: "bg-muted text-muted-foreground",
     destructive: "bg-destructive/10 text-destructive",
     accent: "bg-accent/10 text-accent",
     primary: "bg-primary/10 text-primary",
   };
-
+  
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
       <div className="bg-card w-full max-w-md max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-border shadow-2xl">
@@ -1822,7 +1826,7 @@ export function PickerModal({
             </svg>
           </button>
         </div>
-
+        
         {/* Поиск (если опций больше 3) */}
         {options.length > 3 && (
           <div className="px-4 py-2 border-b border-border shrink-0">
@@ -1835,7 +1839,7 @@ export function PickerModal({
             />
           </div>
         )}
-
+        
         {/* Список */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredOptions.length > 0 ? (
@@ -1890,8 +1894,8 @@ export function PickerModal({
             </div>
           )}
         </div>
-
-        {/* Нижняя кнопка отмены (на мобильных удобнее) */}
+        
+        {/* Нижняя кнопка отмены */}
         <div className="px-4 py-3 border-t border-border shrink-0">
           <button
             onClick={onClose}
@@ -2191,6 +2195,7 @@ export function AccountItem({ account, onSelect }: Props) {
 FILE: components\lists\DebtItem.tsx
 ─────────────────────────────────────────
 import { Debt } from "@/db";
+import { calculateTotalPayments } from "@/db";
 
 interface Props {
   debt: Debt;
@@ -2200,7 +2205,10 @@ interface Props {
 export function DebtItem({ debt, onSelect }: Props) {
   const bankLabel = debt.bank === 'sber' ? 'Сбер' : debt.bank === 'tbank' ? 'Т-Банк' : debt.bank === 'person' ? 'Физлицо' : debt.bank === 'other' ? 'Другой' : '';
   const dateLabel = debt.startDate ? new Date(debt.startDate).toLocaleDateString('ru-RU') : '';
-
+  
+  // Для кредитов показываем общую сумму выплат, для остальных — текущий остаток
+  const displayAmount = debt.type === 'bank_loan' ? calculateTotalPayments(debt) : debt.currentAmount;
+  
   return (
     <button
       onClick={() => onSelect(debt.id)}
@@ -2215,9 +2223,16 @@ export function DebtItem({ debt, onSelect }: Props) {
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <p className="font-mono text-lg text-destructive">
-          - ₽ {debt.currentAmount.toLocaleString('ru-RU')}
-        </p>
+        <div className="text-right">
+          <p className="font-mono text-lg text-destructive">
+            - ₽ {displayAmount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+          </p>
+          {debt.type === 'bank_loan' && debt.totalAmount !== debt.currentAmount && debt.currentAmount > 0 && (
+            <p className="text-[10px] text-muted-foreground font-mono">
+              остаток: ₽ {debt.currentAmount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+            </p>
+          )}
+        </div>
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
@@ -2630,10 +2645,18 @@ interface Props {
   onShowSchedule: () => void;
 }
 
+// Вспомогательная функция: получить корректную дату платежа
+function getPaymentDate(year: number, month: number, day: number): Date {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const actualDay = Math.min(day, lastDay);
+  return new Date(year, month, actualDay);
+}
+
 export function DebtDetailView({ debt, transactions, allAccounts, onBack, onDataChanged, onShowSchedule }: Props) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
   
+  // Расчёт ежемесячного аннуитетного платежа
   const monthlyPayment = useMemo(() => {
     if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || debt.totalAmount <= 0) return null;
     
@@ -2642,6 +2665,92 @@ export function DebtDetailView({ debt, transactions, allAccounts, onBack, onData
     const months = debt.termMonths;
     const payment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     return Math.round(payment * 100) / 100;
+  }, [debt]);
+  
+  // Расчёт общей суммы выплат (основной долг + все проценты за весь срок)
+  const totalPayments = useMemo(() => {
+    if (debt.type !== 'bank_loan' || !debt.interestRate || !debt.termMonths || !debt.startDate) {
+      return null;
+    }
+    
+    const annualRate = debt.interestRate / 100;
+    const monthlyRate = annualRate / 12;
+    const months = debt.termMonths;
+    const principal = debt.totalAmount;
+    
+    // Аннуитетный платёж
+    const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+    
+    let balance = principal;
+    let totalInterest = 0;
+    const startDate = new Date(debt.startDate);
+    const paymentDay = debt.paymentDay || startDate.getDate();
+    
+    // Первый платёж: из nextPaymentDate или конец месяца открытия (как в графике)
+    let firstPaymentDate: Date;
+    if (debt.nextPaymentDate) {
+      firstPaymentDate = new Date(debt.nextPaymentDate);
+      firstPaymentDate.setHours(0, 0, 0, 0);
+      if (firstPaymentDate.getTime() < startDate.getTime()) {
+        firstPaymentDate = new Date(startDate);
+      }
+    } else {
+      firstPaymentDate = getPaymentDate(startDate.getFullYear(), startDate.getMonth(), 31);
+      if (firstPaymentDate.getTime() <= startDate.getTime()) {
+        const nextMonth = new Date(startDate);
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        firstPaymentDate = getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay);
+      }
+    }
+    
+    // Проценты за неполный первый период
+    const daysInFirstPeriod = Math.ceil(
+      (firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const firstInterest = principal * annualRate * daysInFirstPeriod / 365;
+    totalInterest += firstInterest;
+    
+    // Последующие полные платежи (месяцы 2..termMonths)
+    let prevDate = firstPaymentDate;
+    for (let month = 2; month <= months; month++) {
+      const baseDate = new Date(startDate);
+      baseDate.setMonth(baseDate.getMonth() + month - 1);
+      
+      const paymentDate = getPaymentDate(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        paymentDay
+      );
+      
+      const daysInPeriod = Math.ceil(
+        (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const interest = balance * annualRate * daysInPeriod / 365;
+      totalInterest += interest;
+      
+      const principalPart = annuityPayment - interest;
+      balance -= principalPart;
+      if (balance < 0) balance = 0;
+      
+      prevDate = paymentDate;
+    }
+    
+    // Финальный платёж на дату закрытия
+    const closingDate = new Date(startDate);
+    closingDate.setMonth(closingDate.getMonth() + months);
+    const finalDate = getPaymentDate(
+      closingDate.getFullYear(),
+      closingDate.getMonth(),
+      startDate.getDate()
+    );
+    
+    const daysInFinalPeriod = Math.ceil(
+      (finalDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const finalInterest = balance * annualRate * daysInFinalPeriod / 365;
+    totalInterest += finalInterest;
+    
+    return Math.round((principal + totalInterest) * 100) / 100;
   }, [debt]);
   
   const debtTransactions = useMemo(() => {
@@ -2706,11 +2815,19 @@ export function DebtDetailView({ debt, transactions, allAccounts, onBack, onData
           </div>
         </div>
         
+        {/* Карточка долга — теперь показывает общую сумму выплат */}
         <div className="card mb-4">
           <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
-          <p className="text-3xl font-bold font-mono text-destructive">- ₽ {debt.currentAmount.toLocaleString('ru-RU')}</p>
-          {debt.totalAmount !== debt.currentAmount && (
-            <p className="text-xs text-muted-foreground mt-1 font-mono">Взято: ₽ {debt.totalAmount.toLocaleString('ru-RU')}</p>
+          <p className="text-3xl font-bold font-mono text-destructive">
+            - ₽ {(totalPayments ?? debt.currentAmount).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1 font-mono">
+            Основной долг: ₽ {debt.totalAmount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          {debt.totalAmount !== debt.currentAmount && debt.currentAmount > 0 && (
+            <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+              Текущий остаток: ₽ {debt.currentAmount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
           )}
         </div>
         
@@ -2959,19 +3076,31 @@ export function PaymentScheduleView({ debt, onBack }: Props) {
     const paymentDay = debt.paymentDay || startDate.getDate();
     
     // ========== 1. ПЕРВЫЙ ПЛАТЁЖ (неполный период) ==========
-    const firstPaymentDate = getPaymentDate(
-      startDate.getFullYear(),
-      startDate.getMonth(),
-      31 // Конец месяца открытия
+    let firstPaymentDate: Date;
+
+    if (debt.nextPaymentDate) {
+    // Если указан nextPaymentDate — берём его (как в Т-Банке, ВТБ и т.д.)
+    firstPaymentDate = new Date(debt.nextPaymentDate);
+    firstPaymentDate.setHours(0, 0, 0, 0);
+    
+    // Защита: если дата первого платежа раньше даты открытия — берём дату открытия
+    if (firstPaymentDate.getTime() < startDate.getTime()) {
+        firstPaymentDate = new Date(startDate);
+    }
+    } else {
+    // Fallback: конец месяца открытия (как в Сбере)
+    firstPaymentDate = getPaymentDate(
+        startDate.getFullYear(),
+        startDate.getMonth(),
+        31
     );
     
     // Если первый платёж получился раньше даты открытия — сдвигаем на следующий месяц
     if (firstPaymentDate.getTime() <= startDate.getTime()) {
-      const nextMonth = new Date(startDate);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      firstPaymentDate.setTime(
-        getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay).getTime()
-      );
+        const nextMonth = new Date(startDate);
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        firstPaymentDate = getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay);
+    }
     }
     
     // Проценты за неполный период (с даты открытия до первого платежа)
@@ -3770,6 +3899,87 @@ export async function linkCreditCardToDebt(accountId: string, debtId: string): P
 }
 
 // ==========================================
+// РАСЧЁТ ОБЩЕЙ СУММЫ ВЫПЛАТ ПО КРЕДИТУ
+// ==========================================
+export function calculateTotalPayments(debt: Debt): number {
+  // Для не-кредитов или кредитов без параметров — возвращаем текущий остаток
+  if (debt.type !== 'bank_loan' || !debt.interestRate || !debt.termMonths || !debt.startDate) {
+    return debt.currentAmount;
+  }
+  
+  const annualRate = debt.interestRate / 100;
+  const monthlyRate = annualRate / 12;
+  const months = debt.termMonths;
+  const principal = debt.totalAmount;
+  
+  // Аннуитетный платёж
+  const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+  
+  let balance = principal;
+  let totalInterest = 0;
+  const startDate = new Date(debt.startDate);
+  const paymentDay = debt.paymentDay || startDate.getDate();
+  
+  // Первый платёж (из nextPaymentDate или конец месяца открытия)
+  let firstPaymentDate: Date;
+  if (debt.nextPaymentDate) {
+    firstPaymentDate = new Date(debt.nextPaymentDate);
+    firstPaymentDate.setHours(0, 0, 0, 0);
+    if (firstPaymentDate.getTime() < startDate.getTime()) {
+      firstPaymentDate = new Date(startDate);
+    }
+  } else {
+    const lastDay = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
+    firstPaymentDate = new Date(startDate.getFullYear(), startDate.getMonth(), Math.min(31, lastDay));
+    if (firstPaymentDate.getTime() <= startDate.getTime()) {
+      const nextMonth = new Date(startDate);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const nextLastDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
+      firstPaymentDate = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(paymentDay, nextLastDay));
+    }
+  }
+  
+  // Проценты за первый неполный период
+  const daysInFirstPeriod = Math.ceil(
+    (firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  totalInterest += principal * annualRate * daysInFirstPeriod / 365;
+  
+  // Полные месяцы (2..termMonths)
+  let prevDate = firstPaymentDate;
+  for (let month = 2; month <= months; month++) {
+    const baseDate = new Date(startDate);
+    baseDate.setMonth(baseDate.getMonth() + month - 1);
+    const lastDay = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0).getDate();
+    const paymentDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), Math.min(paymentDay, lastDay));
+    
+    const daysInPeriod = Math.ceil(
+      (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const interest = balance * annualRate * daysInPeriod / 365;
+    totalInterest += interest;
+    
+    balance -= (annuityPayment - interest);
+    if (balance < 0) balance = 0;
+    prevDate = paymentDate;
+  }
+  
+  // Финальный платёж на дату закрытия
+  const closingDate = new Date(startDate);
+  closingDate.setMonth(closingDate.getMonth() + months);
+  const closingLastDay = new Date(closingDate.getFullYear(), closingDate.getMonth() + 1, 0).getDate();
+  const finalDate = new Date(closingDate.getFullYear(), closingDate.getMonth(), Math.min(startDate.getDate(), closingLastDay));
+  
+  const daysInFinalPeriod = Math.ceil(
+    (finalDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  totalInterest += balance * annualRate * daysInFinalPeriod / 365;
+  
+  return Math.round((principal + totalInterest) * 100) / 100;
+}
+
+
+// ==========================================
 // ЭКСПОРТ/ИМПОРТ
 // ==========================================
 export async function exportData(): Promise<string> {
@@ -3887,6 +4097,7 @@ export function useDeviceInfo(): DeviceInfo | null {
 FILE: hooks\useFinanceMetrics.ts
 ─────────────────────────────────────────
 import { Account, Debt } from "@/db";
+import { calculateTotalPayments } from "@/db";
 
 export function useFinanceMetrics(accounts: Account[] | undefined, debts: Debt[] | undefined) {
   const debitAccounts = accounts?.filter(a => a.type === 'debit' || a.type === 'cash') || [];
@@ -3894,8 +4105,13 @@ export function useFinanceMetrics(accounts: Account[] | undefined, debts: Debt[]
   
   const totalBalance = debitAccounts.reduce((sum, a) => sum + a.balance, 0);
   const totalCreditLimit = creditAccounts.reduce((sum, a) => sum + Math.max(0, a.balance), 0);
-  const totalDebt = debts?.reduce((sum, d) => sum + d.currentAmount, 0) || 0;
-
+  
+  // Для кредитов считаем общую сумму выплат, для остальных — текущий остаток
+  const totalDebt = debts?.reduce((sum, d) => {
+    const amount = d.type === 'bank_loan' ? calculateTotalPayments(d) : d.currentAmount;
+    return sum + amount;
+  }, 0) || 0;
+  
   return { totalBalance, totalCreditLimit, totalDebt };
 }
 
@@ -3904,7 +4120,6 @@ export function useFinanceMetrics(accounts: Account[] | undefined, debts: Debt[]
 FILE: hooks\useModalBackHandler.ts
 ─────────────────────────────────────────
 "use client";
-
 import { useEffect, useRef } from "react";
 
 /**
@@ -3913,31 +4128,41 @@ import { useEffect, useRef } from "react";
  * при нажатии "Назад" вызывает onClose.
  */
 export function useModalBackHandler(onClose: () => void, isOpen: boolean = true) {
-  // Сохраняем актуальную версию onClose в ref,
-  // чтобы не добавлять её в зависимости useEffect
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  
+  // Флаг чтобы отличать закрытие через popstate от закрытия через onClose()
+  const closedViaPopStateRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
-
+    
+    closedViaPopStateRef.current = false;
     const stateKey = `modal-${Date.now()}`;
     window.history.pushState({ modal: stateKey }, "");
-
+    
     const handlePopState = () => {
+      closedViaPopStateRef.current = true;
       onCloseRef.current();
     };
-
+    
     window.addEventListener("popstate", handlePopState);
-
+    
     return () => {
       window.removeEventListener("popstate", handlePopState);
-      // Если модалка закрылась не через "Назад" — убираем запись из истории
-      if (window.history.state?.modal === stateKey) {
-        window.history.back();
+      
+      // Если модалка закрылась НЕ через кнопку "Назад" (т.е. через onClose()),
+      // то убираем запись из истории, но только если state ещё наш
+      if (!closedViaPopStateRef.current && window.history.state?.modal === stateKey) {
+        // Используем setTimeout чтобы избежать race condition с другими модалками
+        setTimeout(() => {
+          if (window.history.state?.modal === stateKey) {
+            window.history.back();
+          }
+        }, 0);
       }
     };
-  }, [isOpen]); // ← ТОЛЬКО isOpen, без onClose!
+  }, [isOpen]);
 }
 
 
@@ -5149,4 +5374,4 @@ export function getChartById(id: string): ChartDefinition | undefined {
 =============================================
 Обработано файлов: 39
 Пропущено файлов: 1
-Размер экспорта: 209526 байт
+Размер экспорта: 219975 байт

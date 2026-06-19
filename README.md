@@ -1,36 +1,313 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<div align="center">
 
-## Getting Started
+# 💰 Finance Tracker
 
-First, run the development server:
+### Персональный финансовый трекер нового поколения
+
+**Учёт расходов, доходов, счетов и долгов — всё в одном приложении**
+
+[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Web-blue?style=for-the-badge)]()
+[![Tech](https://img.shields.io/badge/Tech-Next.js%2014%20%7C%20Capacitor%20%7C%20SQLite-orange?style=for-the-badge)]()
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)]()
+[![PRs](https://img.shields.io/badge/PRs-Welcome-brightgreen?style=for-the-badge)]()
+
+[🚀 Возможности](#-возможности) • [📱 Скриншоты](#-скриншоты) • [⚡ Быстрый старт](#-быстрый-старт) • [🏗️ Архитектура](#️-архитектура) • [🤝 Поддержать](#-поддержать-проект)
+
+</div>
+
+---
+
+## 🎯 О проекте
+
+**Finance Tracker** — это open-source приложение для учёта личных финансов, которое работает **полностью локально** на вашем устройстве. Никаких серверов, никакой рекламы, никакой передачи данных третьим лицам.
+
+Приложение создано для людей, которые хотят **контролировать свои деньги**, но не хотят платить за подписки в банковских приложениях и трекерах.
+
+### 💡 Почему Finance Tracker?
+
+✅ **100% приватность** — все данные хранятся только на вашем устройстве  
+✅ **Без рекламы и подписок** — бесплатно навсегда  
+✅ **Работает офлайн** — даже в самолёте  
+✅ **Умные расчёты** — проценты по кредитам считаются по дням, как в Сбере и Т-Банке  
+✅ **Красивые графики** — наглядная аналитика ваших финансов  
+✅ **Адаптивный дизайн** — идеально на телефоне, планшете и десктопе  
+
+---
+
+## ✨ Возможности
+
+### 💳 Управление счетами
+- 🏦 **Дебетовые карты** — учёт баланса по всем банкам
+- 💵 **Наличные** — не забывайте про деньги в кошельке
+- 💳 **Кредитные карты** — с автоматическим расчётом долга от лимита
+- 📦 **Рассрочки** — Ozon, Яндекс Маркет, DNS и другие
+
+### 📊 Учёт долгов и кредитов
+- 🏦 **Банковские кредиты** — аннуитетные и дифференцированные платежи
+- 👤 **Долги физлицам** — с условиями возврата и контактами
+- 📦 **Рассрочки** — с графиком платежей по месяцам
+- 💳 **Кредитные карты** — с учётом льготного периода
+
+### 💸 5 типов операций
+| Тип | Описание |
+|-----|----------|
+| 📉 **Расход** | Списание со счёта с категорией |
+| 📈 **Доход** | Зачисление на счёт |
+| 🔄 **Перевод** | Между своими счетами |
+| 💳 **Гашение долга** | Уменьшение долга (опционально со списанием со счёта) |
+| 🤝 **Взять в долг** | Увеличение долга (опционально с зачислением на счёт) |
+
+### 📈 Графики и аналитика
+- 🥧 **Расходы по категориям** — куда уходят деньги в этом месяце
+- 📈 **Динамика баланса** — как менялся баланс за 30 дней
+- 📊 **Активность по месяцам** — доходы vs расходы за полгода
+
+### 🧮 Умные расчёты кредитов
+- ✅ Расчёт процентов **по дням** (как в Сбере, Т-Банке, ВТБ)
+- ✅ Учёт **неполного первого периода** (с даты выдачи до первого платежа)
+- ✅ **Финальный платёж** на дату закрытия
+- ✅ Полный **график платежей** с разбивкой на основной долг и проценты
+- ✅ Расчёт **общей переплаты** по кредиту
+
+### 🎨 Интерфейс
+- 🌙 Тёмная и светлая тема (автоматически по системе)
+- 📱 Mobile-first дизайн
+- ⚡ Плавные анимации и переходы
+- 🔙 Обработка аппаратной кнопки «Назад» на Android
+
+---
+
+## 📱 Скриншоты
+
+<div align="center">
+
+| Главная | Счета | Операции | Настройки |
+|---------|-------|----------|-----------|
+| ![Home](docs/screenshots/home.png) | ![Accounts](docs/screenshots/accounts.png) | ![Transactions](docs/screenshots/transactions.png) | ![Settings](docs/screenshots/settings.png) |
+
+| Детали счёта | График платежей | Поддержка |
+|--------------|-----------------|-----------|
+| ![Account](docs/screenshots/account-detail.png) | ![Schedule](docs/screenshots/payment-schedule.png) | ![Support](docs/screenshots/support.png) |
+
+</div>
+
+> 💡 **Примечание:** Скриншоты будут добавлены после первого релиза. Если хотите помочь — пришлите свои скриншоты в Issues!
+
+---
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **[Next.js 14](https://nextjs.org/)** — React-фреймворк с App Router
+- **[TypeScript](https://www.typescriptlang.org/)** — строгая типизация
+- **[Tailwind CSS](https://tailwindcss.com/)** — utility-first стили
+- **[Recharts](https://recharts.org/)** — красивые графики
+
+### Mobile
+- **[Capacitor](https://capacitorjs.com/)** — нативная обёртка для Android/iOS
+- **[@capacitor-community/sqlite](https://github.com/capacitor-community/sqlite)** — SQLite на устройстве
+- **@capacitor/device** — информация об устройстве
+- **@capacitor/filesystem** — работа с файловой системой
+- **@capacitor/local-notifications** — уведомления
+- **@capacitor/camera** — камера для QR-кодов
+- **@capacitor/network** — проверка сети
+- **@capacitor-community/bluetooth-le** — Bluetooth
+
+### Хранение данных
+- **SQLite** — основная БД на устройстве
+- **localStorage** — настройки UI (графики и т.д.)
+
+### Утилиты
+- **uuid** — генерация уникальных ID
+
+---
+
+## ⚡ Быстрый старт
+
+### Требования
+- Node.js 18+
+- npm или yarn
+- Android Studio (для Android)
+- Xcode (для iOS, только macOS)
+
+### Установка
 
 ```bash
+# Клонируем репозиторий
+git clone https://github.com/yourusername/finance-tracker.git
+cd finance-tracker
+
+# Устанавливаем зависимости
+npm install
+
+# Запускаем в режиме разработки
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте [http://localhost:3000](http://localhost:3000) в браузере.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Сборка для Android
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Синхронизируем веб-приложение с нативным проектом
+npx cap sync android
 
-## Learn More
+# Открываем в Android Studio
+npx cap open android
+```
 
-To learn more about Next.js, take a look at the following resources:
+### Сборка для iOS
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx cap sync ios
+npx cap open ios
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 🏗️ Архитектура
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+finance-tracker/
+├── app/                    # Next.js App Router
+│   ├── globals.css         # Глобальные стили и CSS-переменные
+│   ├── layout.tsx          # Корневой layout
+│   └── page.tsx            # Главная страница + роутинг
+│
+├── components/             # UI-компоненты
+│   ├── views/              # Экраны (Home, Accounts, Settings...)
+│   ├── lists/              # Карточки списков (AccountItem, DebtItem...)
+│   ├── charts/             # Графики и их пикер
+│   ├── dashboard/          # Карточки статистики
+│   └── layout/             # Нижняя навигация
+│
+├── db/                     # Бизнес-логика
+│   └── index.ts            # CRUD + эффекты транзакций
+│
+├── hooks/                  # React-хуки
+│   ├── useDatabase.ts      # Загрузка данных из БД
+│   ├── useFinanceMetrics.ts# Расчёт метрик
+│   ├── useStorageInfo.ts   # Диагностика хранилища
+│   ├── useDeviceInfo.ts    # Информация об устройстве
+│   └── useModalBackHandler.ts # Кнопка "Назад" на Android
+│
+├── lib/                    # Утилиты и абстракции
+│   ├── database.ts         # Слой БД (SQLite через Capacitor)
+│   ├── categories.ts       # Категории расходов/доходов
+│   ├── migration.ts        # Миграция с IndexedDB
+│   └── charts/             # Компоненты графиков
+│
+└── docs/                   # Документация и скриншоты
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Ключевые идеи
+
+#### 🔄 Эффекты транзакций
+При создании/удалении/редактировании транзакции автоматически пересчитываются:
+- Балансы всех связанных счетов
+- Остатки по долгам
+- Долги по кредитным картам и рассрочкам
+
+Это избавляет от ручного поддержания консистентности данных.
+
+#### 📅 Расчёт процентов по дням
+Формула расчёта процентов повторяет логику российских банков:
+
+```
+Проценты = Остаток × Годовая ставка × Дней в периоде / 365
+```
+
+Учитывается:
+- Неполный первый период (с даты выдачи до первого платежа)
+- Полные месяцы с учётом реального количества дней
+- Финальный платёж на дату закрытия
+
+---
+
+## 🗺️ Roadmap
+
+### ✅ v0.3.0 (текущая)
+- [x] Управление счетами (дебет, кредит, наличные, рассрочки)
+- [x] Учёт долгов (кредиты, физлица, рассрочки)
+- [x] 5 типов операций с эффектами
+- [x] Графики и аналитика
+- [x] Расчёт процентов по дням
+- [x] Тёмная/светлая тема
+- [x] Экран поддержки разработчика
+
+### 🚧 v0.4.0 (в разработке)
+- [ ] Редактирование счетов, долгов и транзакций
+- [ ] Экспорт/импорт данных (JSON)
+- [ ] Повторяющиеся транзакции
+- [ ] Поиск и фильтры в списке операций
+- [ ] Тосты вместо `alert()`
+
+### 💭 v1.0.0 (планируется)
+- [ ] Синхронизация между устройствами
+- [ ] Бэкапы в облако
+- [ ] Мультивалютность
+- [ ] Бюджеты по категориям
+- [ ] Цели накоплений
+
+---
+
+## 🤝 Поддержать проект
+
+Finance Tracker — **бесплатный open-source проект без рекламы**. Если приложение оказалось полезным, вы можете поддержать разработку:
+
+### 💵 USDT (TRC-20)
+```
+TQ3pKUs7Wox8yyeSdTvjw4pfEBVCU57Bm6
+```
+> ⚠️ Отправляйте только USDT в сети **TRC-20 (Tron)**. Отправка в другой сети может привести к безвозвратной потере средств.
+
+### 🌐 Другие способы
+- Boosty: [boosty.to/bytewizard](https://boosty.to/bytewizard)
+- Telegram: [@bytewizard](https://t.me/bytewizard)
+
+**Каждая поддержка помогает:**
+- 💻 Оплачивать хостинг и домен
+- 🚀 Разрабатывать новые функции
+- 🐛 Быстрее исправлять баги
+- 📱 Выпускать обновления
+
+---
+
+## 🐛 Баги и предложения
+
+Нашли баг или есть идея? Создайте [Issue](https://github.com/yourusername/finance-tracker/issues) или откройте [Pull Request](https://github.com/yourusername/finance-tracker/pulls).
+
+Перед созданием PR:
+1. Форкните репозиторий
+2. Создайте ветку для фичи (`git checkout -b feature/amazing-feature`)
+3. Закоммитьте изменения (`git commit -m 'Add amazing feature'`)
+4. Запушьте в ветку (`git push origin feature/amazing-feature`)
+5. Откройте Pull Request
+
+---
+
+## 📄 Лицензия
+
+Этот проект распространяется под лицензией **MIT**. См. [LICENSE](LICENSE) для подробностей.
+
+---
+
+## 👨‍💻 Автор
+
+**Даниил** — разработчик, владелец собственного ИП по разработке ПО и игр, а также мастерской по ремонту.
+
+- 🌐 Сайт: [bytewizard.ru](https://bytewizard.ru)
+- 📧 Email: [support@bytewizard.ru](mailto:support@bytewizard.ru)
+- 💬 Telegram: [@bytewizard](https://t.me/bytewizard)
+
+---
+
+<div align="center">
+
+### ⭐ Если проект оказался полезным — поставьте звёздочку!
+
+**Сделано с 💙 для людей, которые хотят контролировать свои финансы**
+
+[↑ Наверх](#-finance-tracker)
+
+</div>

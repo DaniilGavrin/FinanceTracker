@@ -1,7 +1,5 @@
 "use client";
-import { useModalBackHandler } from "@/hooks/useModalBackHandler";
-
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 export interface PickerOption {
   id: string;
@@ -31,9 +29,15 @@ export function PickerModal({
   searchPlaceholder = "Поиск...",
   emptyText = "Ничего не найдено",
 }: Props) {
-  useModalBackHandler(onClose);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+  
   const [search, setSearch] = useState("");
-
   const filteredOptions = useMemo(() => {
     if (!search.trim()) return options;
     const query = search.toLowerCase();
@@ -43,14 +47,14 @@ export function PickerModal({
         opt.subtitle?.toLowerCase().includes(query)
     );
   }, [options, search]);
-
+  
   const badgeColors = {
     default: "bg-muted text-muted-foreground",
     destructive: "bg-destructive/10 text-destructive",
     accent: "bg-accent/10 text-accent",
     primary: "bg-primary/10 text-primary",
   };
-
+  
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
       <div className="bg-card w-full max-w-md max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-border shadow-2xl">
@@ -67,7 +71,7 @@ export function PickerModal({
             </svg>
           </button>
         </div>
-
+        
         {/* Поиск (если опций больше 3) */}
         {options.length > 3 && (
           <div className="px-4 py-2 border-b border-border shrink-0">
@@ -80,7 +84,7 @@ export function PickerModal({
             />
           </div>
         )}
-
+        
         {/* Список */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredOptions.length > 0 ? (
@@ -135,8 +139,8 @@ export function PickerModal({
             </div>
           )}
         </div>
-
-        {/* Нижняя кнопка отмены (на мобильных удобнее) */}
+        
+        {/* Нижняя кнопка отмены */}
         <div className="px-4 py-3 border-t border-border shrink-0">
           <button
             onClick={onClose}

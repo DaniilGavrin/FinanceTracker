@@ -19,6 +19,7 @@ import { DebtDetailView } from "@/components/views/DebtDetailView";
 import { TransactionsView } from "@/components/views/TransactionsView";
 import { SettingsView } from "@/components/views/SettingsView";
 import { PaymentScheduleView } from "@/components/views/PaymentScheduleView";
+import { SupportView } from "@/components/views/SupportView";
 
 type Tab = "home" | "accounts" | "transactions" | "settings";
 
@@ -36,6 +37,7 @@ export default function Home() {
   const [showFAQ, setShowFAQ] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'debt' | 'transaction'; id: string; name: string } | null>(null);
   const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
 
   // Миграция из IndexedDB (один раз)
   useEffect(() => {
@@ -94,6 +96,10 @@ export default function Home() {
         </div>
       </div>
     );
+  }
+
+  if (showSupport) {
+    return <SupportView onBack={() => setShowSupport(false)} />;
   }
 
   // Если выбран счёт — показываем экран деталей (БЕЗ header и навигации)
@@ -171,7 +177,9 @@ export default function Home() {
             onDelete={(id, name) => handleDeleteRequest('transaction', id, name)} 
           />
         )}
-        {activeTab === "settings" && <SettingsView />}
+        {activeTab === "settings" && (
+          <SettingsView onShowSupport={() => setShowSupport(true)} />
+        )}
       </main>
 
       {/* Нижняя навигация */}
