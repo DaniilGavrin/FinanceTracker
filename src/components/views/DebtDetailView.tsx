@@ -15,7 +15,6 @@ interface Props {
   onShowSchedule: () => void;
 }
 
-// Вспомогательная функция: получить корректную дату платежа
 function getPaymentDate(year: number, month: number, day: number): Date {
   const lastDay = new Date(year, month + 1, 0).getDate();
   const actualDay = Math.min(day, lastDay);
@@ -26,101 +25,55 @@ export function DebtDetailView({ debt, transactions, allAccounts, onBack, onData
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
   
-  // Расчёт ежемесячного аннуитетного платежа
-  const monthlyPayment = useMemo(() => {
-    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || debt.totalAmount <= 0) return null;
-    
-    const principal = debt.totalAmount;
-    const monthlyRate = debt.interestRate / 100 / 12;
-    const months = debt.termMonths;
-    const payment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    return Math.round(payment * 100) / 100;
-  }, [debt]);
-  
-  // Расчёт общей суммы выплат (основной долг + все проценты за весь срок)
-  const totalPayments = useMemo(() => {
-    if (debt.type !== 'bank_loan' || !debt.interestRate || !debt.termMonths || !debt.startDate) {
-      return null;
+  const { monthlyPayment, totalPayments } = useMemo(() => {
+    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || !debt.startDate || debt.totalAmount <= 0) {
+      return { monthlyPayment: null, totalPayments: null };
     }
-    
+
+    const isDiff = debt.paymentType === 'differentiated';
     const annualRate = debt.interestRate / 100;
-    const monthlyRate = annualRate / 12;
     const months = debt.termMonths;
     const principal = debt.totalAmount;
-    
-    // Аннуитетный платёж
-    const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    
-    let balance = principal;
-    let totalInterest = 0;
-    const startDate = new Date(debt.startDate);
-    const paymentDay = debt.paymentDay || startDate.getDate();
-    
-    // Первый платёж: из nextPaymentDate или конец месяца открытия (как в графике)
-    let firstPaymentDate: Date;
-    if (debt.nextPaymentDate) {
-      firstPaymentDate = new Date(debt.nextPaymentDate);
-      firstPaymentDate.setHours(0, 0, 0, 0);
-      if (firstPaymentDate.getTime() < startDate.getTime()) {
-        firstPaymentDate = new Date(startDate);
-      }
-    } else {
-      firstPaymentDate = getPaymentDate(startDate.getFullYear(), startDate.getMonth(), 31);
+
+    if (isDiff) {
+      const fixedPrincipal = principal / months;
+      const startDate = new Date(debt.startDate!);
+      let firstPaymentDate: Date = debt.nextPaymentDate 
+        ? new Date(debt.nextPaymentDate) 
+        : new Date(startDate.getFullYear(), startDate.getMonth() + 1, debt.paymentDay || startDate.getDate());
       if (firstPaymentDate.getTime() <= startDate.getTime()) {
-        const nextMonth = new Date(startDate);
-        nextMonth.setMonth(nextMonth.getMonth() + 1);
-        firstPaymentDate = getPaymentDate(nextMonth.getFullYear(), nextMonth.getMonth(), paymentDay);
+        firstPaymentDate.setMonth(firstPaymentDate.getMonth() + 1);
       }
+      
+      const daysFirst = Math.ceil((firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const firstInterest = principal * annualRate * daysFirst / 365;
+      const firstPayment = fixedPrincipal + firstInterest;
+
+      let bal = principal;
+      let totalInt = 0;
+      let prev = startDate;
+      for (let m = 0; m < months; m++) {
+        const curr = new Date(firstPaymentDate);
+        curr.setMonth(curr.getMonth() + m);
+        const days = Math.ceil((curr.getTime() - prev.getTime()) / (1000*60*60*24));
+        totalInt += bal * annualRate * days / 365;
+        bal -= fixedPrincipal;
+        prev = curr;
+      }
+
+      return {
+        monthlyPayment: Math.round(firstPayment * 100) / 100,
+        totalPayments: Math.round((principal + totalInt) * 100) / 100
+      };
     }
-    
-    // Проценты за неполный первый период
-    const daysInFirstPeriod = Math.ceil(
-      (firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    const firstInterest = principal * annualRate * daysInFirstPeriod / 365;
-    totalInterest += firstInterest;
-    
-    // Последующие полные платежи (месяцы 2..termMonths)
-    let prevDate = firstPaymentDate;
-    for (let month = 2; month <= months; month++) {
-      const baseDate = new Date(startDate);
-      baseDate.setMonth(baseDate.getMonth() + month - 1);
-      
-      const paymentDate = getPaymentDate(
-        baseDate.getFullYear(),
-        baseDate.getMonth(),
-        paymentDay
-      );
-      
-      const daysInPeriod = Math.ceil(
-        (paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const interest = balance * annualRate * daysInPeriod / 365;
-      totalInterest += interest;
-      
-      const principalPart = annuityPayment - interest;
-      balance -= principalPart;
-      if (balance < 0) balance = 0;
-      
-      prevDate = paymentDate;
-    }
-    
-    // Финальный платёж на дату закрытия
-    const closingDate = new Date(startDate);
-    closingDate.setMonth(closingDate.getMonth() + months);
-    const finalDate = getPaymentDate(
-      closingDate.getFullYear(),
-      closingDate.getMonth(),
-      startDate.getDate()
-    );
-    
-    const daysInFinalPeriod = Math.ceil(
-      (finalDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    const finalInterest = balance * annualRate * daysInFinalPeriod / 365;
-    totalInterest += finalInterest;
-    
-    return Math.round((principal + totalInterest) * 100) / 100;
+
+    const startDate = new Date(debt.startDate!);
+    const monthlyRate = annualRate / 12;
+    const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+    return {
+      monthlyPayment: Math.round(annuityPayment * 100) / 100,
+      totalPayments: Math.round(annuityPayment * months * 100) / 100
+    };
   }, [debt]);
   
   const debtTransactions = useMemo(() => {
@@ -185,7 +138,6 @@ export function DebtDetailView({ debt, transactions, allAccounts, onBack, onData
           </div>
         </div>
         
-        {/* Карточка долга — теперь показывает общую сумму выплат */}
         <div className="card mb-4">
           <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
           <p className="text-3xl font-bold font-mono text-destructive">

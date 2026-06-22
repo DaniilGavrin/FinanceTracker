@@ -27,19 +27,19 @@ export async function createDebt(data: Omit<Debt, 'id' | 'updatedAt' | 'synced'>
   
   let finalData = { ...data };
   
-  // Для кредита рассчитываем ежемесячный платёж, но НЕ перезаписываем totalAmount
   if (data.type === 'bank_loan' && data.interestRate && data.termMonths && data.totalAmount > 0) {
-    const monthlyRate = data.interestRate / 100 / 12;
+    const isDiff = data.paymentType === 'differentiated';
+    const annualRate = data.interestRate / 100;
     const months = data.termMonths;
-    const principal = data.totalAmount; // Берём именно ту сумму, которую ввёл пользователь
-    
-    // Аннуитетный платёж (стандартная формула)
-    const monthlyPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    
-    finalData = {
-      ...data,
-      monthlyPayment: Math.round(monthlyPayment * 100) / 100,
-    };
+    const principal = data.totalAmount;
+
+    if (!isDiff) {
+      const monthlyRate = annualRate / 12;
+      const monthlyPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+      finalData = { ...data, monthlyPayment: Math.round(monthlyPayment * 100) / 100 };
+    } else {
+      finalData = { ...data, monthlyPayment: undefined };
+    }
   }
   
   await db.addDebt({
