@@ -5,6 +5,7 @@ import { Debt, Transaction, deleteDebt, deleteTransaction } from "@/db";
 import { TransactionItem } from "@/components/lists/TransactionItem";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Account } from "@/db";
+import { calculatePaymentSchedule } from "@/lib/calculations";
 
 interface Props {
   debt: Debt;
@@ -15,64 +16,15 @@ interface Props {
   onShowSchedule: () => void;
 }
 
-function getPaymentDate(year: number, month: number, day: number): Date {
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  const actualDay = Math.min(day, lastDay);
-  return new Date(year, month, actualDay);
-}
-
 export function DebtDetailView({ debt, transactions, allAccounts, onBack, onDataChanged, onShowSchedule }: Props) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTxTarget, setDeleteTxTarget] = useState<{ id: string; name: string } | null>(null);
   
   const { monthlyPayment, totalPayments } = useMemo(() => {
-    if (debt.type !== 'bank_loan' || !debt.termMonths || !debt.interestRate || !debt.startDate || debt.totalAmount <= 0) {
-      return { monthlyPayment: null, totalPayments: null };
-    }
-
-    const isDiff = debt.paymentType === 'differentiated';
-    const annualRate = debt.interestRate / 100;
-    const months = debt.termMonths;
-    const principal = debt.totalAmount;
-
-    if (isDiff) {
-      const fixedPrincipal = principal / months;
-      const startDate = new Date(debt.startDate!);
-      let firstPaymentDate: Date = debt.nextPaymentDate 
-        ? new Date(debt.nextPaymentDate) 
-        : new Date(startDate.getFullYear(), startDate.getMonth() + 1, debt.paymentDay || startDate.getDate());
-      if (firstPaymentDate.getTime() <= startDate.getTime()) {
-        firstPaymentDate.setMonth(firstPaymentDate.getMonth() + 1);
-      }
-      
-      const daysFirst = Math.ceil((firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-      const firstInterest = principal * annualRate * daysFirst / 365;
-      const firstPayment = fixedPrincipal + firstInterest;
-
-      let bal = principal;
-      let totalInt = 0;
-      let prev = startDate;
-      for (let m = 0; m < months; m++) {
-        const curr = new Date(firstPaymentDate);
-        curr.setMonth(curr.getMonth() + m);
-        const days = Math.ceil((curr.getTime() - prev.getTime()) / (1000*60*60*24));
-        totalInt += bal * annualRate * days / 365;
-        bal -= fixedPrincipal;
-        prev = curr;
-      }
-
-      return {
-        monthlyPayment: Math.round(firstPayment * 100) / 100,
-        totalPayments: Math.round((principal + totalInt) * 100) / 100
-      };
-    }
-
-    const startDate = new Date(debt.startDate!);
-    const monthlyRate = annualRate / 12;
-    const annuityPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+    const result = calculatePaymentSchedule(debt);
     return {
-      monthlyPayment: Math.round(annuityPayment * 100) / 100,
-      totalPayments: Math.round(annuityPayment * months * 100) / 100
+      monthlyPayment: result.monthlyPayment,
+      totalPayments: result.totalPayments,
     };
   }, [debt]);
   

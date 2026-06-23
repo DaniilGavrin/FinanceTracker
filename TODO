@@ -19,7 +19,7 @@
 - [ ] 🟡 `createCreditCard` / `createInstallment` не обрабатывают `currentBalance > limit`
 - [ ] 🟡 `debt_borrow` транзакция без `fromAccountId` — деньги "в никуда"
 - [ ] 🟢 `PermissionChecker` вызывает `App.getInfo()` при denied-уведомлениях (leftover)
-- [ ] 🟢 В `DebtDetailView` показывается `totalPayments` вместо `currentAmount` для кредитов
+- [x] 🟢 В `DebtDetailView` показывается `totalPayments` вместо `currentAmount` для кредитов
 
 ### 1.2 UI/UX баги
 - [ ] 🔴 На мобильном нет способа удалить транзакцию (иконка корзины только на `group-hover`)
