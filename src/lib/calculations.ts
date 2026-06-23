@@ -1,22 +1,10 @@
 import { Debt } from '@/lib/database';
 
-// ==========================================
-// УТИЛИТЫ ДЛЯ РАБОТЫ С ДАТАМИ
-// ==========================================
-
-/**
- * Возвращает дату платежа, корректно обрабатывая месяцы с разным количеством дней.
- * Например, 31 февраля → 28 (или 29).
- */
 export function getPaymentDate(year: number, month: number, day: number): Date {
   const lastDay = new Date(year, month + 1, 0).getDate();
   const actualDay = Math.min(day, lastDay);
   return new Date(year, month, actualDay);
 }
-
-// ==========================================
-// ТИПЫ
-// ==========================================
 
 export interface PaymentRow {
   month: number;
@@ -28,29 +16,19 @@ export interface PaymentRow {
 }
 
 export interface PaymentCalculation {
-  /** Ежемесячный платёж (аннуитет — постоянный, дифф — первый/максимальный) */
   monthlyPayment: number | null;
-  /** Сумма всех выплат за весь срок */
   totalPayments: number;
-  /** Сумма всех процентов (переплата) */
   totalInterest: number;
-  /** Основной долг (должен равняться totalAmount) */
   totalPrincipal: number;
-  /** Детальный график по месяцам */
   schedule: PaymentRow[];
 }
 
-// ==========================================
-// ГЛАВНАЯ ФУНКЦИЯ РАСЧЁТА ГРАФИКА ПЛАТЕЖЕЙ
-// ==========================================
+// Хелпер для округления до копеек
+function roundToKopecks(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
-/**
- * Рассчитывает полный график платежей по кредиту.
- * Поддерживает аннуитетный и дифференцированный типы.
- * Учитывает неполный первый период и финальный платёж.
- */
 export function calculatePaymentSchedule(debt: Debt): PaymentCalculation {
-  // Для не-кредитов или кредитов без параметров — возвращаем пустой результат
   if (
     debt.type !== 'bank_loan' ||
     !debt.termMonths ||
@@ -71,10 +49,21 @@ export function calculatePaymentSchedule(debt: Debt): PaymentCalculation {
   const annualRate = debt.interestRate / 100;
   const months = debt.termMonths;
   const principal = debt.totalAmount;
+  const monthlyRate = annualRate / 12;
   const startDate = new Date(debt.startDate);
   const paymentDay = debt.paymentDay || startDate.getDate();
 
-  // === ОПРЕДЕЛЯЕМ ДАТУ ПЕРВОГО ПЛАТЕЖА ===
+  const annuityPayment = isDiff ? 0 : roundToKopecks(
+    principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1)
+  );
+
+  const fixedPrincipal = isDiff ? roundToKopecks(principal / months) : 0;
+
+  const rows: PaymentRow[] = [];
+  let balance = principal;
+  let totalInterest = 0;
+
+  // ========== 1. ПЕРВЫЙ ПЛАТЁЖ (неполный период) ==========
   let firstPaymentDate: Date;
   if (debt.nextPaymentDate) {
     firstPaymentDate = new Date(debt.nextPaymentDate);
@@ -91,145 +80,122 @@ export function calculatePaymentSchedule(debt: Debt): PaymentCalculation {
     }
   }
 
-  const rows: PaymentRow[] = [];
-  let balance = principal;
-  let totalInterest = 0;
-  let prevDate = new Date(debt.startDate);
+  const daysInFirstPeriod = Math.ceil((firstPaymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  const firstInterest = principal * annualRate * daysInFirstPeriod / 365;
 
   if (isDiff) {
-    // ==========================================
-    // 🟢 ДИФФЕРЕНЦИРОВАННЫЙ ПЛАТЁЖ
-    // ==========================================
-    const fixedPrincipal = principal / months;
+    // Дифференцированный: первый платёж = фикс. тело + проценты
+    const firstPayment = fixedPrincipal + firstInterest;
+    balance = roundToKopecks(balance - fixedPrincipal);
 
-    // 1. Первый платёж (неполный период)
-    const daysFirst = Math.ceil((firstPaymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
-    const intFirst = balance * annualRate * daysFirst / 365;
-    const payFirst = fixedPrincipal + intFirst;
-    balance -= fixedPrincipal;
-    totalInterest += intFirst;
     rows.push({
       month: 1,
       date: firstPaymentDate.toLocaleDateString('ru-RU'),
-      payment: Math.round(payFirst * 100) / 100,
-      interest: Math.round(intFirst * 100) / 100,
-      principal: Math.round(fixedPrincipal * 100) / 100,
-      remainingBalance: Math.round(balance * 100) / 100,
+      payment: roundToKopecks(firstPayment),
+      interest: roundToKopecks(firstInterest),
+      principal: roundToKopecks(fixedPrincipal),
+      remainingBalance: roundToKopecks(balance),
     });
-    prevDate = firstPaymentDate;
-
-    // 2. Остальные месяцы
-    for (let m = 2; m <= months; m++) {
-      const base = new Date(firstPaymentDate);
-      base.setMonth(base.getMonth() + (m - 1));
-      const payDate = getPaymentDate(base.getFullYear(), base.getMonth(), paymentDay);
-      const days = Math.ceil((payDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
-      const interest = balance * annualRate * days / 365;
-      let principalPart = fixedPrincipal;
-      if (m === months) principalPart = balance;
-      const payment = principalPart + interest;
-      balance -= principalPart;
-      totalInterest += interest;
-      rows.push({
-        month: m,
-        date: payDate.toLocaleDateString('ru-RU'),
-        payment: Math.round(payment * 100) / 100,
-        interest: Math.round(interest * 100) / 100,
-        principal: Math.round(principalPart * 100) / 100,
-        remainingBalance: Math.round(balance * 100) / 100,
-      });
-      prevDate = payDate;
-    }
   } else {
-    // 🔵 АННУИТЕТНЫЙ ПЛАТЁЖ
-    const monthlyRate = annualRate / 12;
-    const annuityPayment =
-        principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) /
-        (Math.pow(1 + monthlyRate, months) - 1);
-
-    // Первый платёж (неполный период — только проценты)
-    const daysFirst = Math.ceil((firstPaymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
-    const intFirst = balance * annualRate * daysFirst / 365;
-    balance += intFirst;
+    // Аннуитетный: первый платёж = только проценты, тело не меняется
+    totalInterest += firstInterest;
     rows.push({
-        month: 1,
-        date: firstPaymentDate.toLocaleDateString('ru-RU'),
-        payment: Math.round(intFirst * 100) / 100,
-        interest: Math.round(intFirst * 100) / 100,
-        principal: 0,
-        remainingBalance: Math.round(balance * 100) / 100,
+      month: 1,
+      date: firstPaymentDate.toLocaleDateString('ru-RU'),
+      payment: roundToKopecks(firstInterest),
+      interest: roundToKopecks(firstInterest),
+      principal: 0,
+      remainingBalance: roundToKopecks(balance),
     });
-    prevDate = firstPaymentDate;
+  }
 
-    // Полные месяцы (со 2-го по (months-1)-й)
-    // ← ИСПРАВЛЕНО: было m <= months, стало m < months
-    for (let m = 2; m < months; m++) {
-        const base = new Date(firstPaymentDate);
-        base.setMonth(base.getMonth() + (m - 1));
-        const payDate = getPaymentDate(base.getFullYear(), base.getMonth(), paymentDay);
-        const days = Math.ceil((payDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
-        const interest = balance * annualRate * days / 365;
-        let principalPart = annuityPayment - interest;
-        const payment = annuityPayment;
-        balance -= principalPart;
-        if (balance < 0) balance = 0;
-        rows.push({
-        month: m,
-        date: payDate.toLocaleDateString('ru-RU'),
-        payment: Math.round(payment * 100) / 100,
-        interest: Math.round(interest * 100) / 100,
-        principal: Math.round(principalPart * 100) / 100,
-        remainingBalance: Math.round(balance * 100) / 100,
-        });
-        prevDate = payDate;
+  // ========== 2. ПОЛНЫЕ МЕСЯЦЫ (2..months) ==========
+  for (let month = 2; month <= months; month++) {
+    const baseDate = new Date(startDate);
+    baseDate.setMonth(baseDate.getMonth() + month - 1);
+    const paymentDate = getPaymentDate(baseDate.getFullYear(), baseDate.getMonth(), paymentDay);
+
+    const prevDateStr = rows[rows.length - 1].date;
+    const [d, m, y] = prevDateStr.split('.').map(Number);
+    const prevDate = new Date(y, m - 1, d);
+    const daysInPeriod = Math.ceil((paymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    const interest = balance * annualRate * daysInPeriod / 365;
+
+    if (isDiff) {
+      const payment = fixedPrincipal + interest;
+      balance = roundToKopecks(balance - fixedPrincipal);
+      if (balance < 0) balance = 0;
+
+      totalInterest += interest;
+
+      rows.push({
+        month,
+        date: paymentDate.toLocaleDateString('ru-RU'),
+        payment: roundToKopecks(payment),
+        interest: roundToKopecks(interest),
+        principal: roundToKopecks(fixedPrincipal),
+        remainingBalance: roundToKopecks(balance),
+      });
+    } else {
+
+      const principalPart = roundToKopecks(annuityPayment - interest);
+      const payment = annuityPayment;
+      balance = roundToKopecks(balance - principalPart);
+      if (balance < 0) balance = 0;
+
+      totalInterest += interest;
+
+      rows.push({
+        month,
+        date: paymentDate.toLocaleDateString('ru-RU'),
+        payment: roundToKopecks(payment),
+        interest: roundToKopecks(interest),
+        principal: roundToKopecks(principalPart),
+        remainingBalance: roundToKopecks(balance),
+      });
     }
+  }
 
-    // Финальный платёж (закрытие кредита) — единственный с month = months
-    const closingDate = new Date(debt.startDate);
-    closingDate.setMonth(closingDate.getMonth() + months);
-    const finalDate = getPaymentDate(closingDate.getFullYear(), closingDate.getMonth(), startDate.getDate());
-    const daysFinal = Math.ceil((finalDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
-    const intFinal = balance * annualRate * daysFinal / 365;
-    const payFinal = balance + intFinal;
-    rows.push({
-        month: months,
-        date: finalDate.toLocaleDateString('ru-RU'),
-        payment: Math.round(payFinal * 100) / 100,
-        interest: Math.round(intFinal * 100) / 100,
-        principal: Math.round(balance * 100) / 100,
-        remainingBalance: 0,
-    });
-    }
+  // ========== 3. ФИНАЛЬНЫЙ ПЛАТЁЖ (дата закрытия = дата открытия + termMonths) ==========
+  const closingDate = new Date(startDate);
+  closingDate.setMonth(closingDate.getMonth() + months);
+  const finalDate = getPaymentDate(closingDate.getFullYear(), closingDate.getMonth(), startDate.getDate());
 
-  // === ИТОГИ ===
+  const lastRowDateStr = rows[rows.length - 1].date;
+  const [ld, lm, ly] = lastRowDateStr.split('.').map(Number);
+  const lastDate = new Date(ly, lm - 1, ld);
+  const daysInFinalPeriod = Math.ceil((finalDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  const finalInterest = balance * annualRate * daysInFinalPeriod / 365;
+  const finalPrincipal = balance;
+  const finalPayment = finalPrincipal + finalInterest;
+
+  totalInterest += finalInterest;
+
+  rows.push({
+    month: months + 1,
+    date: finalDate.toLocaleDateString('ru-RU'),
+    payment: roundToKopecks(finalPayment),
+    interest: roundToKopecks(finalInterest),
+    principal: roundToKopecks(finalPrincipal),
+    remainingBalance: 0,
+  });
+
   const totalPayments = rows.reduce((sum, row) => sum + row.payment, 0);
   const totalPrincipal = rows.reduce((sum, row) => sum + row.principal, 0);
 
-  // Для аннуитета monthlyPayment = постоянный платёж
-  // Для диффа monthlyPayment = первый (максимальный) платёж
-  const monthlyRate = annualRate / 12;
-  const annuityPayment = isDiff
-    ? rows[0].payment
-    : principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) /
-      (Math.pow(1 + monthlyRate, months) - 1);
+  const calculatedAnnuity = isDiff ? (rows[0]?.payment || 0) : annuityPayment;
 
   return {
-    monthlyPayment: Math.round(annuityPayment * 100) / 100,
-    totalPayments: Math.round(totalPayments * 100) / 100,
-    totalInterest: Math.round(totalInterest * 100) / 100,
-    totalPrincipal: Math.round(totalPrincipal * 100) / 100,
+    monthlyPayment: roundToKopecks(calculatedAnnuity),
+    totalPayments: roundToKopecks(totalPayments),
+    totalInterest: roundToKopecks(totalInterest),
+    totalPrincipal: roundToKopecks(totalPrincipal),
     schedule: rows,
   };
 }
 
-// ==========================================
-// ОБЁРТКА — ТОЛЬКО СУММА ВЫПЛАТ
-// ==========================================
-
-/**
- * Возвращает общую сумму выплат по кредиту (основной долг + все проценты).
- * Используется в списках и метриках для отображения "полной стоимости кредита".
- */
 export function calculateTotalPayments(debt: Debt): number {
   if (
     debt.type !== 'bank_loan' ||
