@@ -141,51 +141,50 @@ export function calculatePaymentSchedule(debt: Debt): PaymentCalculation {
       prevDate = payDate;
     }
   } else {
-    // ==========================================
     // 🔵 АННУИТЕТНЫЙ ПЛАТЁЖ
-    // ==========================================
     const monthlyRate = annualRate / 12;
     const annuityPayment =
-      principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) /
-      (Math.pow(1 + monthlyRate, months) - 1);
+        principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) /
+        (Math.pow(1 + monthlyRate, months) - 1);
 
     // Первый платёж (неполный период — только проценты)
     const daysFirst = Math.ceil((firstPaymentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
     const intFirst = balance * annualRate * daysFirst / 365;
     balance += intFirst;
     rows.push({
-      month: 1,
-      date: firstPaymentDate.toLocaleDateString('ru-RU'),
-      payment: Math.round(intFirst * 100) / 100,
-      interest: Math.round(intFirst * 100) / 100,
-      principal: 0,
-      remainingBalance: Math.round(balance * 100) / 100,
+        month: 1,
+        date: firstPaymentDate.toLocaleDateString('ru-RU'),
+        payment: Math.round(intFirst * 100) / 100,
+        interest: Math.round(intFirst * 100) / 100,
+        principal: 0,
+        remainingBalance: Math.round(balance * 100) / 100,
     });
     prevDate = firstPaymentDate;
 
-    // Полные месяцы
-    for (let m = 2; m <= months; m++) {
-      const base = new Date(firstPaymentDate);
-      base.setMonth(base.getMonth() + (m - 1));
-      const payDate = getPaymentDate(base.getFullYear(), base.getMonth(), paymentDay);
-      const days = Math.ceil((payDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
-      const interest = balance * annualRate * days / 365;
-      let principalPart = annuityPayment - interest;
-      const payment = annuityPayment;
-      balance -= principalPart;
-      if (balance < 0) balance = 0;
-      rows.push({
+    // Полные месяцы (со 2-го по (months-1)-й)
+    // ← ИСПРАВЛЕНО: было m <= months, стало m < months
+    for (let m = 2; m < months; m++) {
+        const base = new Date(firstPaymentDate);
+        base.setMonth(base.getMonth() + (m - 1));
+        const payDate = getPaymentDate(base.getFullYear(), base.getMonth(), paymentDay);
+        const days = Math.ceil((payDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+        const interest = balance * annualRate * days / 365;
+        let principalPart = annuityPayment - interest;
+        const payment = annuityPayment;
+        balance -= principalPart;
+        if (balance < 0) balance = 0;
+        rows.push({
         month: m,
         date: payDate.toLocaleDateString('ru-RU'),
         payment: Math.round(payment * 100) / 100,
         interest: Math.round(interest * 100) / 100,
         principal: Math.round(principalPart * 100) / 100,
         remainingBalance: Math.round(balance * 100) / 100,
-      });
-      prevDate = payDate;
+        });
+        prevDate = payDate;
     }
 
-    // Финальный платёж (закрытие кредита)
+    // Финальный платёж (закрытие кредита) — единственный с month = months
     const closingDate = new Date(debt.startDate);
     closingDate.setMonth(closingDate.getMonth() + months);
     const finalDate = getPaymentDate(closingDate.getFullYear(), closingDate.getMonth(), startDate.getDate());
@@ -193,14 +192,14 @@ export function calculatePaymentSchedule(debt: Debt): PaymentCalculation {
     const intFinal = balance * annualRate * daysFinal / 365;
     const payFinal = balance + intFinal;
     rows.push({
-      month: months,
-      date: finalDate.toLocaleDateString('ru-RU'),
-      payment: Math.round(payFinal * 100) / 100,
-      interest: Math.round(intFinal * 100) / 100,
-      principal: Math.round(balance * 100) / 100,
-      remainingBalance: 0,
+        month: months,
+        date: finalDate.toLocaleDateString('ru-RU'),
+        payment: Math.round(payFinal * 100) / 100,
+        interest: Math.round(intFinal * 100) / 100,
+        principal: Math.round(balance * 100) / 100,
+        remainingBalance: 0,
     });
-  }
+    }
 
   // === ИТОГИ ===
   const totalPayments = rows.reduce((sum, row) => sum + row.payment, 0);
